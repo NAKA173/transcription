@@ -173,7 +173,6 @@
             font-size: 0.82rem;
         }
         .setting-label span:first-child { color: #aaa; }
-        .setting-label .setting-value { color: #6c63ff; font-weight: 600; }
         .setting-desc {
             font-size: 0.72rem;
             color: #666;
@@ -195,6 +194,25 @@
             border-radius: 50%;
             cursor: pointer;
         }
+        /* Editable number inputs next to sliders */
+        .num-input {
+            width: 60px;
+            background: #252540;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #6c63ff;
+            font-weight: 600;
+            font-size: 0.82rem;
+            text-align: center;
+            padding: 2px 4px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .num-input:focus {
+            border-color: #6c63ff;
+        }
+        .num-input::-webkit-inner-spin-button { opacity: 0.5; }
+
         .preset-row {
             display: flex;
             gap: 0.5rem;
@@ -250,37 +268,37 @@
             <div class="setting-row">
                 <div class="setting-label">
                     <span>ノート検出感度</span>
-                    <span class="setting-value" id="onsetVal">0.60</span>
+                    <input type="number" class="num-input" id="onsetVal" min="0.1" max="0.95" step="0.01" value="0.60">
                 </div>
-                <div class="setting-desc">低い→多くのノートを検出 / 高い→確実なノートのみ</div>
-                <input type="range" id="onsetThreshold" min="0.1" max="0.95" step="0.05" value="0.60">
+                <div class="setting-desc">低い→多くのノートを検出 / 高い→確実なノートのみ (0.10 - 0.95)</div>
+                <input type="range" id="onsetThreshold" min="0.1" max="0.95" step="0.01" value="0.60">
             </div>
 
             <div class="setting-row">
                 <div class="setting-label">
                     <span>フレーム確信度</span>
-                    <span class="setting-value" id="frameVal">0.50</span>
+                    <input type="number" class="num-input" id="frameVal" min="0.1" max="0.95" step="0.01" value="0.50">
                 </div>
-                <div class="setting-desc">低い→ノートを長く保持 / 高い→短めに切る</div>
-                <input type="range" id="frameThreshold" min="0.1" max="0.95" step="0.05" value="0.50">
+                <div class="setting-desc">低い→ノートを長く保持 / 高い→短めに切る (0.10 - 0.95)</div>
+                <input type="range" id="frameThreshold" min="0.1" max="0.95" step="0.01" value="0.50">
             </div>
 
             <div class="setting-row">
                 <div class="setting-label">
                     <span>最短ノート長</span>
-                    <span class="setting-value" id="noteLenVal">200ms</span>
+                    <input type="number" class="num-input" id="noteLenVal" min="10" max="2000" step="1" value="200" style="width:70px;">
                 </div>
-                <div class="setting-desc">これより短いノートは除去（ゴミノート対策）</div>
-                <input type="range" id="minNoteLength" min="50" max="500" step="10" value="200">
+                <div class="setting-desc">これより短いノートは除去 (ms単位, 10 - 2000)</div>
+                <input type="range" id="minNoteLength" min="10" max="2000" step="10" value="200">
             </div>
 
             <div class="setting-row">
                 <div class="setting-label">
                     <span>最小ベロシティ</span>
-                    <span class="setting-value" id="velVal">30</span>
+                    <input type="number" class="num-input" id="velVal" min="0" max="127" step="1" value="30">
                 </div>
-                <div class="setting-desc">これより弱い音は除去（誤検出対策）</div>
-                <input type="range" id="minVelocity" min="0" max="80" step="5" value="30">
+                <div class="setting-desc">これより弱い音は除去 (0 - 127)</div>
+                <input type="range" id="minVelocity" min="0" max="127" step="1" value="30">
             </div>
 
             <div class="setting-row">
@@ -342,10 +360,10 @@
             <div class="setting-row" id="quantizeStrengthRow">
                 <div class="setting-label">
                     <span>クォンタイズ強度</span>
-                    <span class="setting-value" id="quantizeVal">80%</span>
+                    <input type="number" class="num-input" id="quantizeVal" min="0" max="100" step="1" value="80">
                 </div>
-                <div class="setting-desc">低い→ルバート（自由なリズム） / 高い→正確にグリッドにスナップ</div>
-                <input type="range" id="quantizeStrength" min="0" max="100" step="5" value="80">
+                <div class="setting-desc">低い→ルバート（自由なリズム） / 高い→正確にグリッドにスナップ (0 - 100%)</div>
+                <input type="range" id="quantizeStrength" min="0" max="100" step="1" value="80">
             </div>
         </div>
 
@@ -377,20 +395,43 @@
         const progressBar = document.getElementById('progressBar');
         const progressStep = document.getElementById('progressStep');
 
-        const sliders = {
-            onset: document.getElementById('onsetThreshold'),
-            frame: document.getElementById('frameThreshold'),
-            noteLen: document.getElementById('minNoteLength'),
-            vel: document.getElementById('minVelocity'),
-            quantize: document.getElementById('quantizeStrength'),
-        };
-        const displays = {
-            onset: document.getElementById('onsetVal'),
-            frame: document.getElementById('frameVal'),
-            noteLen: document.getElementById('noteLenVal'),
-            vel: document.getElementById('velVal'),
-            quantize: document.getElementById('quantizeVal'),
-        };
+        // Slider + number input pairs (bidirectional sync)
+        const paramPairs = [
+            { slider: 'onsetThreshold', input: 'onsetVal' },
+            { slider: 'frameThreshold', input: 'frameVal' },
+            { slider: 'minNoteLength',  input: 'noteLenVal' },
+            { slider: 'minVelocity',    input: 'velVal' },
+            { slider: 'quantizeStrength', input: 'quantizeVal' },
+        ];
+
+        const sliders = {};
+        const numInputs = {};
+
+        paramPairs.forEach(({ slider, input }) => {
+            const s = document.getElementById(slider);
+            const n = document.getElementById(input);
+            sliders[slider] = s;
+            numInputs[input] = n;
+
+            // Slider → number input
+            s.addEventListener('input', () => {
+                n.value = s.value;
+                clearPresetHighlight();
+            });
+
+            // Number input → slider (on every keystroke / change)
+            n.addEventListener('input', () => {
+                const min = parseFloat(s.min);
+                const max = parseFloat(s.max);
+                let v = parseFloat(n.value);
+                if (!isNaN(v)) {
+                    v = Math.max(min, Math.min(max, v));
+                    s.value = v;
+                }
+                clearPresetHighlight();
+            });
+        });
+
         const quantizeEnabled = document.getElementById('quantizeEnabled');
         const quantizeStrengthRow = document.getElementById('quantizeStrengthRow');
 
@@ -398,6 +439,10 @@
             quantizeStrengthRow.style.opacity = quantizeEnabled.checked ? '1' : '0.4';
             quantizeStrengthRow.style.pointerEvents = quantizeEnabled.checked ? 'auto' : 'none';
         });
+
+        function clearPresetHighlight() {
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        }
 
         // Presets
         const presets = {
@@ -408,34 +453,23 @@
 
         function applyPreset(name) {
             const p = presets[name];
-            sliders.onset.value = p.onset;
-            sliders.frame.value = p.frame;
-            sliders.noteLen.value = p.noteLen;
-            sliders.vel.value = p.vel;
-            sliders.quantize.value = p.quantize;
-            updateDisplays();
+            setParam('onsetThreshold', 'onsetVal', p.onset);
+            setParam('frameThreshold', 'frameVal', p.frame);
+            setParam('minNoteLength', 'noteLenVal', p.noteLen);
+            setParam('minVelocity', 'velVal', p.vel);
+            setParam('quantizeStrength', 'quantizeVal', p.quantize);
             document.querySelectorAll('.preset-btn').forEach(b => {
                 b.classList.toggle('active', b.dataset.preset === name);
             });
         }
 
-        document.querySelectorAll('.preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
-        });
-
-        function updateDisplays() {
-            displays.onset.textContent = parseFloat(sliders.onset.value).toFixed(2);
-            displays.frame.textContent = parseFloat(sliders.frame.value).toFixed(2);
-            displays.noteLen.textContent = sliders.noteLen.value + 'ms';
-            displays.vel.textContent = sliders.vel.value;
-            displays.quantize.textContent = sliders.quantize.value + '%';
+        function setParam(sliderId, inputId, value) {
+            document.getElementById(sliderId).value = value;
+            document.getElementById(inputId).value = value;
         }
 
-        Object.values(sliders).forEach(s => {
-            s.addEventListener('input', () => {
-                updateDisplays();
-                document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-            });
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
         });
 
         // Settings toggle
@@ -499,6 +533,21 @@
             progressStep.textContent = '';
         }
 
+        // Read current values from inputs (number inputs are the source of truth)
+        function getParams() {
+            return {
+                onset_threshold: parseFloat(document.getElementById('onsetVal').value),
+                frame_threshold: parseFloat(document.getElementById('frameVal').value),
+                minimum_note_length_ms: parseFloat(document.getElementById('noteLenVal').value),
+                min_velocity: parseInt(document.getElementById('velVal').value),
+                quantize_enabled: quantizeEnabled.checked,
+                quantize_strength: document.getElementById('quantizeVal').value / 100,
+                remove_pitch_bends: document.getElementById('removePitchBends').checked,
+                separate_instruments: document.getElementById('separateInstruments').checked,
+                preprocess: document.getElementById('preprocessEnabled').checked,
+            };
+        }
+
         // Convert — try WebSocket first, fall back to HTTP POST
         convertBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
@@ -507,17 +556,7 @@
             result.innerHTML = '';
             hideProgress();
 
-            const params = {
-                onset_threshold: parseFloat(sliders.onset.value),
-                frame_threshold: parseFloat(sliders.frame.value),
-                minimum_note_length_ms: parseFloat(sliders.noteLen.value),
-                min_velocity: parseInt(sliders.vel.value),
-                quantize_enabled: quantizeEnabled.checked,
-                quantize_strength: sliders.quantize.value / 100,
-                remove_pitch_bends: document.getElementById('removePitchBends').checked,
-                separate_instruments: document.getElementById('separateInstruments').checked,
-                preprocess: document.getElementById('preprocessEnabled').checked,
-            };
+            const params = getParams();
 
             // Try WebSocket for real-time progress
             const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -193,7 +193,7 @@ def _build_params(
     if frame_threshold is not None:
         params.frame_threshold = max(0.0, min(1.0, float(frame_threshold)))
     if minimum_note_length_ms is not None:
-        params.minimum_note_length_ms = max(50.0, min(1000.0, float(minimum_note_length_ms)))
+        params.minimum_note_length_ms = max(10.0, min(5000.0, float(minimum_note_length_ms)))
     if min_velocity is not None:
         params.min_velocity = max(0, min(127, int(min_velocity)))
     if quantize_enabled is not None:
