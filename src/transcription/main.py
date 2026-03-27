@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from transcription.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE, UPLOAD_DIR
@@ -31,6 +32,8 @@ async def transcribe(
     frame_threshold: Optional[float] = Form(default=None),
     minimum_note_length_ms: Optional[float] = Form(default=None),
     min_velocity: Optional[int] = Form(default=None),
+    quantize_enabled: Optional[bool] = Form(default=None),
+    quantize_strength: Optional[float] = Form(default=None),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -58,19 +61,30 @@ async def transcribe(
         params.minimum_note_length_ms = max(50.0, min(1000.0, minimum_note_length_ms))
     if min_velocity is not None:
         params.min_velocity = max(0, min(127, min_velocity))
+    if quantize_enabled is not None:
+        params.quantize_enabled = quantize_enabled
+    if quantize_strength is not None:
+        params.quantize_strength = max(0.0, min(1.0, quantize_strength))
 
     try:
-        midi_path = transcribe_audio(upload_path, params)
+        result = transcribe_audio(upload_path, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
     finally:
         upload_path.unlink(missing_ok=True)
 
+    # Return MIDI file with metadata in headers
+    headers = {
+        "X-Detected-BPM": str(result.detected_bpm or ""),
+        "X-Note-Count": str(result.note_count),
+    }
+
     return FileResponse(
-        path=str(midi_path),
+        path=str(result.midi_path),
         media_type="audio/midi",
         filename=f"{Path(file.filename).stem}.mid",
-        background=_cleanup_task(midi_path),
+        headers=headers,
+        background=_cleanup_task(result.midi_path),
     )
 
 
