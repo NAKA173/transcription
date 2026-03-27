@@ -34,6 +34,7 @@ async def transcribe(
     min_velocity: Optional[int] = Form(default=None),
     quantize_enabled: Optional[bool] = Form(default=None),
     quantize_strength: Optional[float] = Form(default=None),
+    remove_pitch_bends: Optional[bool] = Form(default=None),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -65,6 +66,8 @@ async def transcribe(
         params.quantize_enabled = quantize_enabled
     if quantize_strength is not None:
         params.quantize_strength = max(0.0, min(1.0, quantize_strength))
+    if remove_pitch_bends is not None:
+        params.remove_pitch_bends = remove_pitch_bends
 
     try:
         result = transcribe_audio(upload_path, params)

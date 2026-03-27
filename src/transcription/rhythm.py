@@ -1,7 +1,7 @@
 """Beat detection and note quantization using librosa."""
 
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import librosa
 import numpy as np
@@ -11,11 +11,15 @@ import numpy as np
 class BeatInfo:
     tempo: float
     beat_times: np.ndarray
-    beat_interval: float  # seconds per beat
+    beat_interval: float  # average seconds per beat
 
     @property
     def subdivisions(self) -> np.ndarray:
-        """Generate sub-beat grid (16th notes) for finer quantization."""
+        """Generate sub-beat grid (16th notes) for finer quantization.
+
+        Uses actual beat intervals (not fixed tempo) so the grid adapts
+        to tempo changes within the track.
+        """
         if len(self.beat_times) < 2:
             return self.beat_times
         subs = []
@@ -26,6 +30,31 @@ class BeatInfo:
                 subs.append(start + (end - start) * j / 4)
         subs.append(self.beat_times[-1])
         return np.array(subs)
+
+    @property
+    def tempo_changes(self) -> list[tuple[float, float]]:
+        """Detect tempo changes from beat intervals.
+
+        Returns list of (time, bpm) tuples for variable-tempo MIDI encoding.
+        """
+        if len(self.beat_times) < 3:
+            return [(0.0, self.tempo)]
+
+        changes = []
+        prev_bpm = 0.0
+        for i in range(len(self.beat_times) - 1):
+            interval = self.beat_times[i + 1] - self.beat_times[i]
+            if interval > 0:
+                bpm = 60.0 / interval
+                # Only record if BPM changed significantly (>5%)
+                if abs(bpm - prev_bpm) / max(prev_bpm, 1) > 0.05:
+                    changes.append((self.beat_times[i], bpm))
+                    prev_bpm = bpm
+
+        if not changes:
+            changes = [(0.0, self.tempo)]
+
+        return changes
 
 
 def detect_beats(audio_path: Path) -> BeatInfo:

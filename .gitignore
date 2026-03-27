@@ -12,5 +12,6 @@ venv/
 uploads/
 *.mid
 *.midi
+!tests/fixtures/*.mid
 .ruff_cache/
 .pytest_cache/

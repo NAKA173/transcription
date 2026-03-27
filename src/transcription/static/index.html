@@ -245,6 +245,17 @@
                 <input type="range" id="minVelocity" min="0" max="80" step="5" value="30">
             </div>
 
+            <div class="setting-row">
+                <div class="setting-label">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" id="removePitchBends" checked
+                               style="width:16px; height:16px; accent-color:#6c63ff;">
+                        <span>ピッチベンド除去</span>
+                    </label>
+                </div>
+                <div class="setting-desc">AI変換で生じる不要なピッチベンドを除去（推奨ON）</div>
+            </div>
+
             <div style="border-top: 1px solid #2a2a4a; margin: 1rem 0 0.8rem; padding-top: 0.8rem;">
                 <div class="setting-label" style="margin-bottom: 0.5rem;">
                     <span style="color: #ccc; font-weight: 600;">リズム補正</span>
@@ -417,6 +428,7 @@
             formData.append('min_velocity', sliders.vel.value);
             formData.append('quantize_enabled', quantizeEnabled.checked);
             formData.append('quantize_strength', sliders.quantize.value / 100);
+            formData.append('remove_pitch_bends', document.getElementById('removePitchBends').checked);
 
             try {
                 const response = await fetch('/api/transcribe', {

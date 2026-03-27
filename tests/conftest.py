@@ -47,3 +47,9 @@ def silent_wav(tmp_path: Path) -> Path:
         wf.writeframes(b"\x00\x00" * n_samples)
 
     return filepath
+
+
+@pytest.fixture
+def reference_midi() -> Path:
+    """Path to the reference MIDI file (before.mid) for quality comparison."""
+    return Path(__file__).parent / "fixtures" / "reference.mid"

@@ -1,5 +1,6 @@
+import uuid
 from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import pretty_midi
 from basic_pitch.inference import predict
@@ -15,6 +16,8 @@ class TranscribeParams:
     min_velocity: int = 30
     quantize_enabled: bool = True
     quantize_strength: float = 0.8  # 0.0 = off, 1.0 = full snap
+    remove_pitch_bends: bool = True
+    melodia_trick: bool = True
 
 
 @dataclass
@@ -42,6 +45,7 @@ def transcribe_audio(audio_path: Path, params: TranscribeParams | None = None) -
         onset_threshold=params.onset_threshold,
         frame_threshold=params.frame_threshold,
         minimum_note_length=params.minimum_note_length_ms,
+        melodia_trick=params.melodia_trick,
     )
 
     midi_data = _postprocess_midi(midi_data, params)
@@ -54,8 +58,7 @@ def transcribe_audio(audio_path: Path, params: TranscribeParams | None = None) -
         beat_info = detect_beats(audio_path)
         detected_bpm = beat_info.tempo
 
-        # Only quantize if we have enough beats to form a grid
-        grid = beat_info.subdivisions
+        grid = beat_info.subdivisions  # 16th note grid
         if len(grid) >= 2:
             for instrument in midi_data.instruments:
                 for note in instrument.notes:
@@ -63,9 +66,11 @@ def transcribe_audio(audio_path: Path, params: TranscribeParams | None = None) -
                         note.start, note.end, grid, params.quantize_strength,
                     )
 
+            # Apply detected tempo changes to MIDI
+            _apply_tempo_map(midi_data, beat_info)
+
     note_count = sum(len(i.notes) for i in midi_data.instruments)
 
-    import uuid
     output_path = OUTPUT_DIR / f"{audio_path.stem}_{uuid.uuid4().hex[:8]}.mid"
     midi_data.write(str(output_path))
 
@@ -76,9 +81,41 @@ def transcribe_audio(audio_path: Path, params: TranscribeParams | None = None) -
     )
 
 
+def _apply_tempo_map(midi_data: pretty_midi.PrettyMIDI, beat_info) -> None:
+    """Write detected tempo changes into MIDI tempo map.
+
+    Instead of a flat 120 BPM, embed the actual detected tempo so
+    DAWs display correct bar/beat positions.
+    """
+    from transcription.rhythm import BeatInfo
+
+    changes = beat_info.tempo_changes
+    if not changes:
+        return
+
+    # Clear existing tempo changes and rebuild
+    # PrettyMIDI stores tempo as a list of (time, tempo) internally
+    # We rebuild the initial tempo change list
+    midi_data._tick_scales = []
+    midi_data._tick_scales.append(
+        (0, 60.0 / (changes[0][1] if changes[0][1] > 0 else 120.0) / midi_data.resolution)
+    )
+
+    for time, bpm in changes[1:]:
+        if bpm > 0:
+            tick = midi_data.time_to_tick(time)
+            midi_data._tick_scales.append(
+                (tick, 60.0 / bpm / midi_data.resolution)
+            )
+
+
 def _postprocess_midi(midi_data: pretty_midi.PrettyMIDI, params: TranscribeParams) -> pretty_midi.PrettyMIDI:
     """Clean up MIDI output to reduce noise and improve musicality."""
     for instrument in midi_data.instruments:
+        # Remove pitch bends (Basic Pitch adds these but they cause artifacts)
+        if params.remove_pitch_bends:
+            instrument.pitch_bends = []
+
         # Remove very quiet notes (likely false detections)
         instrument.notes = [n for n in instrument.notes if n.velocity >= params.min_velocity]
 
