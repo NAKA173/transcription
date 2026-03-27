@@ -77,6 +77,7 @@ class TestMultiTrackAssembly:
                     TranscribeParams(
                         separate_instruments=True,
                         quantize_enabled=False,
+                        preprocess=False,
                     ),
                 )
 
@@ -107,6 +108,7 @@ class TestMultiTrackAssembly:
                     TranscribeParams(
                         separate_instruments=True,
                         quantize_enabled=False,
+                        preprocess=False,
                     ),
                 )
 
@@ -131,6 +133,7 @@ class TestMultiTrackAssembly:
                     TranscribeParams(
                         separate_instruments=True,
                         quantize_enabled=False,
+                        preprocess=False,
                     ),
                 )
 

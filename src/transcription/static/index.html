@@ -110,6 +110,33 @@
             font-size: 0.8rem;
         }
 
+        /* Progress bar */
+        .progress-container {
+            display: none;
+            margin-top: 1rem;
+        }
+        .progress-container.active { display: block; }
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: #2a2a4a;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #6c63ff, #9b59b6);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .progress-step {
+            text-align: center;
+            font-size: 0.82rem;
+            color: #aaa;
+        }
+
         /* Settings panel */
         .settings-toggle {
             display: block;
@@ -186,6 +213,17 @@
         }
         .preset-btn:hover { border-color: #6c63ff; color: #fff; }
         .preset-btn.active { border-color: #6c63ff; background: #2a2a5a; color: #fff; }
+        .section-header {
+            border-top: 1px solid #2a2a4a;
+            margin: 1rem 0 0.8rem;
+            padding-top: 0.8rem;
+        }
+        .section-title {
+            color: #ccc;
+            font-weight: 600;
+            font-size: 0.82rem;
+            margin-bottom: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -256,10 +294,23 @@
                 <div class="setting-desc">AI変換で生じる不要なピッチベンドを除去（推奨ON）</div>
             </div>
 
-            <div style="border-top: 1px solid #2a2a4a; margin: 1rem 0 0.8rem; padding-top: 0.8rem;">
-                <div class="setting-label" style="margin-bottom: 0.5rem;">
-                    <span style="color: #ccc; font-weight: 600;">楽器分離（Demucs）</span>
+            <div class="section-header">
+                <div class="section-title">音声前処理</div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" id="preprocessEnabled" checked
+                               style="width:16px; height:16px; accent-color:#6c63ff;">
+                        <span>ノーマライズ＆ノイズ除去</span>
+                    </label>
                 </div>
+                <div class="setting-desc">音量の正規化とバックグラウンドノイズの除去（推奨ON）</div>
+            </div>
+
+            <div class="section-header">
+                <div class="section-title">楽器分離（Demucs）</div>
             </div>
 
             <div class="setting-row">
@@ -273,10 +324,8 @@
                 <div class="setting-desc">Vocals / Drums / Bass / Other に分離→個別トラック化（処理時間が長くなります）</div>
             </div>
 
-            <div style="border-top: 1px solid #2a2a4a; margin: 1rem 0 0.8rem; padding-top: 0.8rem;">
-                <div class="setting-label" style="margin-bottom: 0.5rem;">
-                    <span style="color: #ccc; font-weight: 600;">リズム補正</span>
-                </div>
+            <div class="section-header">
+                <div class="section-title">リズム補正</div>
             </div>
 
             <div class="setting-row">
@@ -302,6 +351,13 @@
 
         <button class="btn btn-primary" id="convertBtn" disabled>MIDIに変換</button>
 
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-bg">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-step" id="progressStep"></div>
+        </div>
+
         <div class="status" id="status"></div>
         <div class="result" id="result"></div>
 
@@ -317,6 +373,9 @@
         const result = document.getElementById('result');
         const settingsToggle = document.getElementById('settingsToggle');
         const settingsPanel = document.getElementById('settingsPanel');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressStep = document.getElementById('progressStep');
 
         const sliders = {
             onset: document.getElementById('onsetThreshold'),
@@ -428,25 +487,125 @@
             result.innerHTML = '';
         }
 
-        // Convert
+        function showProgress(step, percent) {
+            progressContainer.classList.add('active');
+            progressBar.style.width = percent + '%';
+            progressStep.textContent = step;
+        }
+
+        function hideProgress() {
+            progressContainer.classList.remove('active');
+            progressBar.style.width = '0%';
+            progressStep.textContent = '';
+        }
+
+        // Convert — try WebSocket first, fall back to HTTP POST
         convertBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
             convertBtn.disabled = true;
+            result.innerHTML = '';
+            hideProgress();
+
+            const params = {
+                onset_threshold: parseFloat(sliders.onset.value),
+                frame_threshold: parseFloat(sliders.frame.value),
+                minimum_note_length_ms: parseFloat(sliders.noteLen.value),
+                min_velocity: parseInt(sliders.vel.value),
+                quantize_enabled: quantizeEnabled.checked,
+                quantize_strength: sliders.quantize.value / 100,
+                remove_pitch_bends: document.getElementById('removePitchBends').checked,
+                separate_instruments: document.getElementById('separateInstruments').checked,
+                preprocess: document.getElementById('preprocessEnabled').checked,
+            };
+
+            // Try WebSocket for real-time progress
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${location.host}/ws/transcribe`;
+
+            let wsSuccess = false;
+            try {
+                wsSuccess = await transcribeViaWebSocket(wsUrl, params);
+            } catch (e) {
+                console.log('WebSocket failed, falling back to HTTP:', e);
+            }
+
+            if (!wsSuccess) {
+                await transcribeViaHTTP(params);
+            }
+
+            convertBtn.disabled = false;
+        });
+
+        async function transcribeViaWebSocket(wsUrl, params) {
+            return new Promise((resolve, reject) => {
+                const ws = new WebSocket(wsUrl);
+                let resolved = false;
+
+                ws.onerror = () => {
+                    if (!resolved) { resolved = true; resolve(false); }
+                };
+
+                const timeout = setTimeout(() => {
+                    if (!resolved) { resolved = true; ws.close(); resolve(false); }
+                }, 2000);
+
+                ws.onopen = () => {
+                    clearTimeout(timeout);
+                    showProgress('接続中...', 0);
+                    status.innerHTML = '<span class="spinner"></span>変換中...';
+                    status.className = 'status processing';
+
+                    // Read file and send as base64
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        const base64 = reader.result.split(',')[1];
+                        ws.send(JSON.stringify({
+                            filename: selectedFile.name,
+                            audio_base64: base64,
+                            ...params,
+                        }));
+                    };
+                    reader.readAsDataURL(selectedFile);
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'progress') {
+                        showProgress(data.step, data.percent);
+                    } else if (data.type === 'result') {
+                        hideProgress();
+                        displayResult(data);
+                        status.textContent = '変換完了!';
+                        status.className = 'status';
+                        ws.close();
+                        if (!resolved) { resolved = true; resolve(true); }
+                    } else if (data.type === 'error') {
+                        hideProgress();
+                        status.textContent = `エラー: ${data.detail}`;
+                        status.className = 'status error';
+                        ws.close();
+                        if (!resolved) { resolved = true; resolve(true); }
+                    }
+                };
+
+                ws.onclose = () => {
+                    if (!resolved) { resolved = true; resolve(false); }
+                };
+            });
+        }
+
+        async function transcribeViaHTTP(params) {
             status.innerHTML = '<span class="spinner"></span>変換中... しばらくお待ちください';
             status.className = 'status processing';
-            result.innerHTML = '';
+            showProgress('変換中...', 50);
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            formData.append('onset_threshold', sliders.onset.value);
-            formData.append('frame_threshold', sliders.frame.value);
-            formData.append('minimum_note_length_ms', sliders.noteLen.value);
-            formData.append('min_velocity', sliders.vel.value);
-            formData.append('quantize_enabled', quantizeEnabled.checked);
-            formData.append('quantize_strength', sliders.quantize.value / 100);
-            formData.append('remove_pitch_bends', document.getElementById('removePitchBends').checked);
-            formData.append('separate_instruments', document.getElementById('separateInstruments').checked);
+            for (const [key, val] of Object.entries(params)) {
+                formData.append(key, val);
+            }
 
             try {
                 const response = await fetch('/api/transcribe', {
@@ -462,31 +621,62 @@
                 const bpm = response.headers.get('X-Detected-BPM');
                 const noteCount = response.headers.get('X-Note-Count');
                 const stemsUsed = response.headers.get('X-Stems-Used');
+                const timeSig = response.headers.get('X-Time-Signature');
                 const blob = await response.blob();
                 const url = URL.createObjectURL(blob);
                 const name = selectedFile.name.replace(/\.[^.]+$/, '.mid');
 
-                let info = '';
-                if (bpm) info += `BPM: ${Math.round(parseFloat(bpm))}`;
-                if (noteCount) info += `${info ? ' / ' : ''}ノート数: ${noteCount}`;
-                if (stemsUsed) {
-                    const stemLabels = {vocals:'Vocals', drums:'Drums', bass:'Bass', other:'Other'};
-                    const names = stemsUsed.split(',').map(s => stemLabels[s.trim()] || s.trim()).join(', ');
-                    info += `${info ? '<br>' : ''}トラック: ${names}`;
-                }
+                displayResult({
+                    detected_bpm: bpm ? parseFloat(bpm) : null,
+                    note_count: noteCount ? parseInt(noteCount) : 0,
+                    stems_used: stemsUsed ? stemsUsed.split(',').filter(Boolean) : [],
+                    time_signature: timeSig || '',
+                    _blobUrl: url,
+                    filename: name,
+                });
 
-                result.innerHTML = `
-                    ${info ? `<div style="text-align:center;color:#6c63ff;font-size:0.9rem;margin-bottom:0.8rem;">${info}</div>` : ''}
-                    <a class="btn btn-download" href="${url}" download="${name}">MIDIファイルをダウンロード</a>`;
+                hideProgress();
                 status.textContent = '変換完了!';
                 status.className = 'status';
             } catch (err) {
+                hideProgress();
                 status.textContent = `エラー: ${err.message}`;
                 status.className = 'status error';
-            } finally {
-                convertBtn.disabled = false;
             }
-        });
+        }
+
+        function displayResult(data) {
+            let url, name;
+
+            if (data._blobUrl) {
+                url = data._blobUrl;
+                name = data.filename;
+            } else {
+                // Decode base64 MIDI from WebSocket
+                const binaryStr = atob(data.midi_base64);
+                const bytes = new Uint8Array(binaryStr.length);
+                for (let i = 0; i < binaryStr.length; i++) {
+                    bytes[i] = binaryStr.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], { type: 'audio/midi' });
+                url = URL.createObjectURL(blob);
+                name = data.filename || 'output.mid';
+            }
+
+            let info = '';
+            if (data.detected_bpm) info += `BPM: ${Math.round(data.detected_bpm)}`;
+            if (data.time_signature) info += `${info ? ' / ' : ''}拍子: ${data.time_signature}`;
+            if (data.note_count) info += `${info ? ' / ' : ''}ノート数: ${data.note_count}`;
+            if (data.stems_used && data.stems_used.length > 0) {
+                const stemLabels = {vocals:'Vocals', drums:'Drums', bass:'Bass', other:'Other'};
+                const names = data.stems_used.map(s => stemLabels[s.trim()] || s.trim()).join(', ');
+                info += `${info ? '<br>' : ''}トラック: ${names}`;
+            }
+
+            result.innerHTML = `
+                ${info ? `<div style="text-align:center;color:#6c63ff;font-size:0.9rem;margin-bottom:0.8rem;">${info}</div>` : ''}
+                <a class="btn btn-download" href="${url}" download="${name}">MIDIファイルをダウンロード</a>`;
+        }
     </script>
 </body>
 </html>
