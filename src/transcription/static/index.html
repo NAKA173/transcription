@@ -258,6 +258,23 @@
 
             <div style="border-top: 1px solid #2a2a4a; margin: 1rem 0 0.8rem; padding-top: 0.8rem;">
                 <div class="setting-label" style="margin-bottom: 0.5rem;">
+                    <span style="color: #ccc; font-weight: 600;">楽器分離（Demucs）</span>
+                </div>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                        <input type="checkbox" id="separateInstruments"
+                               style="width:16px; height:16px; accent-color:#6c63ff;">
+                        <span>楽器を分離してからMIDI変換</span>
+                    </label>
+                </div>
+                <div class="setting-desc">Vocals / Drums / Bass / Other に分離→個別トラック化（処理時間が長くなります）</div>
+            </div>
+
+            <div style="border-top: 1px solid #2a2a4a; margin: 1rem 0 0.8rem; padding-top: 0.8rem;">
+                <div class="setting-label" style="margin-bottom: 0.5rem;">
                     <span style="color: #ccc; font-weight: 600;">リズム補正</span>
                 </div>
             </div>
@@ -429,6 +446,7 @@
             formData.append('quantize_enabled', quantizeEnabled.checked);
             formData.append('quantize_strength', sliders.quantize.value / 100);
             formData.append('remove_pitch_bends', document.getElementById('removePitchBends').checked);
+            formData.append('separate_instruments', document.getElementById('separateInstruments').checked);
 
             try {
                 const response = await fetch('/api/transcribe', {
@@ -443,6 +461,7 @@
 
                 const bpm = response.headers.get('X-Detected-BPM');
                 const noteCount = response.headers.get('X-Note-Count');
+                const stemsUsed = response.headers.get('X-Stems-Used');
                 const blob = await response.blob();
                 const url = URL.createObjectURL(blob);
                 const name = selectedFile.name.replace(/\.[^.]+$/, '.mid');
@@ -450,6 +469,11 @@
                 let info = '';
                 if (bpm) info += `BPM: ${Math.round(parseFloat(bpm))}`;
                 if (noteCount) info += `${info ? ' / ' : ''}ノート数: ${noteCount}`;
+                if (stemsUsed) {
+                    const stemLabels = {vocals:'Vocals', drums:'Drums', bass:'Bass', other:'Other'};
+                    const names = stemsUsed.split(',').map(s => stemLabels[s.trim()] || s.trim()).join(', ');
+                    info += `${info ? '<br>' : ''}トラック: ${names}`;
+                }
 
                 result.innerHTML = `
                     ${info ? `<div style="text-align:center;color:#6c63ff;font-size:0.9rem;margin-bottom:0.8rem;">${info}</div>` : ''}

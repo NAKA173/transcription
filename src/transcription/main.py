@@ -35,6 +35,7 @@ async def transcribe(
     quantize_enabled: Optional[bool] = Form(default=None),
     quantize_strength: Optional[float] = Form(default=None),
     remove_pitch_bends: Optional[bool] = Form(default=None),
+    separate_instruments: Optional[bool] = Form(default=None),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -68,6 +69,8 @@ async def transcribe(
         params.quantize_strength = max(0.0, min(1.0, quantize_strength))
     if remove_pitch_bends is not None:
         params.remove_pitch_bends = remove_pitch_bends
+    if separate_instruments is not None:
+        params.separate_instruments = separate_instruments
 
     try:
         result = transcribe_audio(upload_path, params)
@@ -80,6 +83,7 @@ async def transcribe(
     headers = {
         "X-Detected-BPM": str(result.detected_bpm or ""),
         "X-Note-Count": str(result.note_count),
+        "X-Stems-Used": ",".join(result.stems_used) if result.stems_used else "",
     }
 
     return FileResponse(
