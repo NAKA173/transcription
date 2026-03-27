@@ -20,11 +20,11 @@ fi
 
 echo "[1/2] 依存パッケージを確認中..."
 pip install --quiet --break-system-packages \
-    fastapi uvicorn[standard] python-multipart \
-    basic-pitch pretty-midi soundfile 2>/dev/null \
+    fastapi "uvicorn[standard]" python-multipart \
+    basic-pitch pretty-midi soundfile scipy 2>/dev/null \
 || pip install --quiet \
-    fastapi uvicorn[standard] python-multipart \
-    basic-pitch pretty-midi soundfile
+    fastapi "uvicorn[standard]" python-multipart \
+    basic-pitch pretty-midi soundfile scipy
 
 echo "[2/2] サーバーを起動中..."
 echo ""

@@ -8,7 +8,7 @@ echo ===================================
 echo.
 
 echo [1/2] 依存パッケージを確認中...
-pip install --quiet fastapi uvicorn[standard] python-multipart basic-pitch pretty-midi soundfile
+pip install --quiet fastapi "uvicorn[standard]" python-multipart basic-pitch pretty-midi soundfile scipy
 
 echo [2/2] サーバーを起動中...
 echo.

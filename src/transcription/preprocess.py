@@ -39,7 +39,9 @@ def preprocess_audio(
         y = _reduce_noise(y, sr)
 
     # Write preprocessed audio to temp file
-    out_path = Path(tempfile.mktemp(suffix=".wav", prefix="preproc_"))
+    fd = tempfile.NamedTemporaryFile(suffix=".wav", prefix="preproc_", delete=False)
+    out_path = Path(fd.name)
+    fd.close()
     sf.write(str(out_path), y, sr)
     return out_path
 

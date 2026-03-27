@@ -1,5 +1,5 @@
 import asyncio
-import json
+import base64
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -15,6 +15,28 @@ app = FastAPI(title="Audio to MIDI Transcription")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Minimum file size to be a valid audio file (WAV header alone is 44 bytes)
+MIN_FILE_SIZE = 100
+
+# Magic bytes for audio format validation
+MAGIC_BYTES = {
+    ".wav": [b"RIFF"],
+    ".mp3": [b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"ID3"],
+}
+
+
+def _validate_audio(content: bytes, ext: str) -> str | None:
+    """Validate audio content. Returns error message or None if valid."""
+    if len(content) < MIN_FILE_SIZE:
+        return "ファイルが小さすぎます。有効な音声ファイルを選択してください。"
+
+    expected = MAGIC_BYTES.get(ext, [])
+    if expected:
+        if not any(content[:len(m)] == m for m in expected):
+            return f"ファイルの中身が{ext}形式ではありません。正しい音声ファイルを選択してください。"
+
+    return None
 
 
 @app.get("/")
@@ -54,6 +76,11 @@ async def transcribe(
     if len(content) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="File too large. Maximum size is 50MB.")
 
+    # Validate audio content (not just extension)
+    validation_err = _validate_audio(content, ext)
+    if validation_err:
+        raise HTTPException(status_code=400, detail=validation_err)
+
     upload_path = UPLOAD_DIR / file.filename
     upload_path.write_bytes(content)
 
@@ -66,9 +93,16 @@ async def transcribe(
     try:
         result = transcribe_audio(upload_path, params)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"変換に失敗しました: {type(e).__name__}")
     finally:
         upload_path.unlink(missing_ok=True)
+
+    # Warn if zero notes detected
+    if result.note_count == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="ノートが検出されませんでした。音声ファイルの内容を確認するか、感度設定を下げてみてください。",
+        )
 
     headers = {
         "X-Detected-BPM": str(result.detected_bpm or ""),
@@ -99,8 +133,16 @@ async def ws_transcribe(websocket: WebSocket):
     """
     await websocket.accept()
 
+    upload_path = None
+    result_path = None
+
     try:
-        data = await websocket.receive_json()
+        # Timeout on receive to prevent hanging connections
+        try:
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+        except asyncio.TimeoutError:
+            await websocket.send_json({"type": "error", "detail": "接続がタイムアウトしました。"})
+            return
 
         filename = data.get("filename", "audio.wav")
         ext = Path(filename).suffix.lower()
@@ -112,13 +154,18 @@ async def ws_transcribe(websocket: WebSocket):
             return
 
         # Decode base64 audio
-        import base64
         audio_bytes = base64.b64decode(data.get("audio_base64", ""))
         if len(audio_bytes) > MAX_UPLOAD_SIZE:
             await websocket.send_json({
                 "type": "error",
                 "detail": "File too large. Maximum size is 50MB.",
             })
+            return
+
+        # Validate audio content
+        validation_err = _validate_audio(audio_bytes, ext)
+        if validation_err:
+            await websocket.send_json({"type": "error", "detail": validation_err})
             return
 
         upload_path = UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}_{filename}"
@@ -137,22 +184,38 @@ async def ws_transcribe(websocket: WebSocket):
         )
 
         # Progress callback that sends WebSocket messages
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        disconnected = False
 
         async def _send_progress(step: str, pct: int):
-            await websocket.send_json({
-                "type": "progress",
-                "step": step,
-                "percent": pct,
-            })
+            nonlocal disconnected
+            if not disconnected:
+                try:
+                    await websocket.send_json({
+                        "type": "progress",
+                        "step": step,
+                        "percent": pct,
+                    })
+                except Exception:
+                    disconnected = True
 
         def on_progress(step: str, pct: int):
-            asyncio.run_coroutine_threadsafe(_send_progress(step, pct), loop)
+            if not disconnected:
+                asyncio.run_coroutine_threadsafe(_send_progress(step, pct), loop)
 
         # Run transcription in thread pool (CPU-bound)
-        result = await asyncio.get_event_loop().run_in_executor(
+        result = await loop.run_in_executor(
             None, lambda: transcribe_audio(upload_path, params, on_progress),
         )
+        result_path = result.midi_path
+
+        # Zero-note warning
+        if result.note_count == 0:
+            await websocket.send_json({
+                "type": "error",
+                "detail": "ノートが検出されませんでした。感度設定を下げてみてください。",
+            })
+            return
 
         # Read MIDI and send as base64
         midi_bytes = result.midi_path.read_bytes()
@@ -168,10 +231,6 @@ async def ws_transcribe(websocket: WebSocket):
             "time_signature": result.time_signature,
         })
 
-        # Cleanup
-        upload_path.unlink(missing_ok=True)
-        result.midi_path.unlink(missing_ok=True)
-
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -179,6 +238,12 @@ async def ws_transcribe(websocket: WebSocket):
             await websocket.send_json({"type": "error", "detail": str(e)})
         except Exception:
             pass
+    finally:
+        # Always clean up temp files, even on disconnect
+        if upload_path and upload_path.exists():
+            upload_path.unlink(missing_ok=True)
+        if result_path and result_path.exists():
+            result_path.unlink(missing_ok=True)
 
 
 def _build_params(

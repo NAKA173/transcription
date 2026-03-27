@@ -10,9 +10,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-import torch
-
 
 # MIDI program numbers for each stem type
 STEM_PROGRAMS = {
@@ -46,11 +43,18 @@ def separate_audio(audio_path: Path) -> SeparationResult:
         SeparationResult with paths to separated stem WAV files.
 
     Raises:
-        RuntimeError: If Demucs model cannot be loaded.
+        RuntimeError: If Demucs/torch is not installed or model cannot be loaded.
     """
-    import torchaudio
-    from demucs.pretrained import get_model
-    from demucs.apply import apply_model
+    try:
+        import torch
+        import torchaudio
+        from demucs.pretrained import get_model
+        from demucs.apply import apply_model
+    except ImportError as e:
+        raise RuntimeError(
+            "楽器分離にはDemucsが必要です。"
+            "インストール: pip install 'transcription[separation]'"
+        ) from e
 
     work_dir = Path(tempfile.mkdtemp(prefix="demucs_"))
 
@@ -96,12 +100,13 @@ def separate_audio(audio_path: Path) -> SeparationResult:
 
 
 def is_separation_available() -> bool:
-    """Check if Demucs model is available (cached or downloadable)."""
+    """Check if Demucs and torch are installed."""
     try:
+        import torch
+        import torchaudio
         from demucs.pretrained import get_model
-        get_model("htdemucs")
         return True
-    except Exception:
+    except ImportError:
         return False
 
 
