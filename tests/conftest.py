@@ -53,3 +53,9 @@ def silent_wav(tmp_path: Path) -> Path:
 def reference_midi() -> Path:
     """Path to the reference MIDI file (before.mid) for quality comparison."""
     return Path(__file__).parent / "fixtures" / "reference.mid"
+
+
+@pytest.fixture
+def test_midi() -> Path:
+    """Path to the multi-section test MIDI (piano+chord, piano+chord+drums, etc.)."""
+    return Path(__file__).parent / "fixtures" / "test.mid"
