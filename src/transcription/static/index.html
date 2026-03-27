@@ -109,6 +109,83 @@
             color: #666;
             font-size: 0.8rem;
         }
+
+        /* Settings panel */
+        .settings-toggle {
+            display: block;
+            width: 100%;
+            margin-top: 1.2rem;
+            padding: 0.5rem;
+            background: none;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #888;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+        .settings-toggle:hover { border-color: #6c63ff; color: #ccc; }
+        .settings-panel {
+            display: none;
+            margin-top: 1rem;
+            padding: 1.2rem;
+            background: #1a1a2e;
+            border-radius: 10px;
+            border: 1px solid #2a2a4a;
+        }
+        .settings-panel.open { display: block; }
+        .setting-row {
+            margin-bottom: 1rem;
+        }
+        .setting-row:last-child { margin-bottom: 0; }
+        .setting-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.3rem;
+            font-size: 0.82rem;
+        }
+        .setting-label span:first-child { color: #aaa; }
+        .setting-label .setting-value { color: #6c63ff; font-weight: 600; }
+        .setting-desc {
+            font-size: 0.72rem;
+            color: #666;
+            margin-bottom: 0.4rem;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #6c63ff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .preset-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.2rem;
+        }
+        .preset-btn {
+            flex: 1;
+            padding: 0.45rem 0.3rem;
+            background: #252540;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #aaa;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover { border-color: #6c63ff; color: #fff; }
+        .preset-btn.active { border-color: #6c63ff; background: #2a2a5a; color: #fff; }
     </style>
 </head>
 <body>
@@ -121,6 +198,52 @@
             <div class="upload-text">クリックまたはドラッグ＆ドロップでファイルを選択</div>
             <input type="file" id="fileInput" accept=".mp3,.wav">
             <div class="file-name" id="fileName"></div>
+        </div>
+
+        <button class="settings-toggle" id="settingsToggle">詳細設定 ▼</button>
+
+        <div class="settings-panel" id="settingsPanel">
+            <div class="preset-row">
+                <button class="preset-btn" data-preset="clean" title="ノイズを最小限に。クリアな音源向き">クリーン</button>
+                <button class="preset-btn active" data-preset="balanced" title="バランス重視（デフォルト）">バランス</button>
+                <button class="preset-btn" data-preset="sensitive" title="細かい音も拾う。弱い音源向き">高感度</button>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <span>ノート検出感度</span>
+                    <span class="setting-value" id="onsetVal">0.60</span>
+                </div>
+                <div class="setting-desc">低い→多くのノートを検出 / 高い→確実なノートのみ</div>
+                <input type="range" id="onsetThreshold" min="0.1" max="0.95" step="0.05" value="0.60">
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <span>フレーム確信度</span>
+                    <span class="setting-value" id="frameVal">0.50</span>
+                </div>
+                <div class="setting-desc">低い→ノートを長く保持 / 高い→短めに切る</div>
+                <input type="range" id="frameThreshold" min="0.1" max="0.95" step="0.05" value="0.50">
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <span>最短ノート長</span>
+                    <span class="setting-value" id="noteLenVal">200ms</span>
+                </div>
+                <div class="setting-desc">これより短いノートは除去（ゴミノート対策）</div>
+                <input type="range" id="minNoteLength" min="50" max="500" step="10" value="200">
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label">
+                    <span>最小ベロシティ</span>
+                    <span class="setting-value" id="velVal">30</span>
+                </div>
+                <div class="setting-desc">これより弱い音は除去（誤検出対策）</div>
+                <input type="range" id="minVelocity" min="0" max="80" step="5" value="30">
+            </div>
         </div>
 
         <button class="btn btn-primary" id="convertBtn" disabled>MIDIに変換</button>
@@ -138,7 +261,67 @@
         const convertBtn = document.getElementById('convertBtn');
         const status = document.getElementById('status');
         const result = document.getElementById('result');
+        const settingsToggle = document.getElementById('settingsToggle');
+        const settingsPanel = document.getElementById('settingsPanel');
 
+        const sliders = {
+            onset: document.getElementById('onsetThreshold'),
+            frame: document.getElementById('frameThreshold'),
+            noteLen: document.getElementById('minNoteLength'),
+            vel: document.getElementById('minVelocity'),
+        };
+        const displays = {
+            onset: document.getElementById('onsetVal'),
+            frame: document.getElementById('frameVal'),
+            noteLen: document.getElementById('noteLenVal'),
+            vel: document.getElementById('velVal'),
+        };
+
+        // Presets
+        const presets = {
+            clean:     { onset: 0.75, frame: 0.65, noteLen: 300, vel: 45 },
+            balanced:  { onset: 0.60, frame: 0.50, noteLen: 200, vel: 30 },
+            sensitive: { onset: 0.40, frame: 0.30, noteLen: 100, vel: 15 },
+        };
+
+        function applyPreset(name) {
+            const p = presets[name];
+            sliders.onset.value = p.onset;
+            sliders.frame.value = p.frame;
+            sliders.noteLen.value = p.noteLen;
+            sliders.vel.value = p.vel;
+            updateDisplays();
+            document.querySelectorAll('.preset-btn').forEach(b => {
+                b.classList.toggle('active', b.dataset.preset === name);
+            });
+        }
+
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+        });
+
+        function updateDisplays() {
+            displays.onset.textContent = parseFloat(sliders.onset.value).toFixed(2);
+            displays.frame.textContent = parseFloat(sliders.frame.value).toFixed(2);
+            displays.noteLen.textContent = sliders.noteLen.value + 'ms';
+            displays.vel.textContent = sliders.vel.value;
+        }
+
+        Object.values(sliders).forEach(s => {
+            s.addEventListener('input', () => {
+                updateDisplays();
+                document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            });
+        });
+
+        // Settings toggle
+        settingsToggle.addEventListener('click', () => {
+            settingsPanel.classList.toggle('open');
+            settingsToggle.textContent = settingsPanel.classList.contains('open')
+                ? '詳細設定 ▲' : '詳細設定 ▼';
+        });
+
+        // File selection
         let selectedFile = null;
 
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -180,6 +363,7 @@
             result.innerHTML = '';
         }
 
+        // Convert
         convertBtn.addEventListener('click', async () => {
             if (!selectedFile) return;
 
@@ -190,6 +374,10 @@
 
             const formData = new FormData();
             formData.append('file', selectedFile);
+            formData.append('onset_threshold', sliders.onset.value);
+            formData.append('frame_threshold', sliders.frame.value);
+            formData.append('minimum_note_length_ms', sliders.noteLen.value);
+            formData.append('min_velocity', sliders.vel.value);
 
             try {
                 const response = await fetch('/api/transcribe', {

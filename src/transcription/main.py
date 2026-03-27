@@ -1,12 +1,12 @@
-import shutil
 from pathlib import Path
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from transcription.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE, UPLOAD_DIR
-from transcription.transcriber import transcribe_audio
+from transcription.transcriber import TranscribeParams, transcribe_audio
 
 app = FastAPI(title="Audio to MIDI Transcription")
 
@@ -25,7 +25,13 @@ async def health():
 
 
 @app.post("/api/transcribe")
-async def transcribe(file: UploadFile):
+async def transcribe(
+    file: UploadFile,
+    onset_threshold: Optional[float] = Form(default=None),
+    frame_threshold: Optional[float] = Form(default=None),
+    minimum_note_length_ms: Optional[float] = Form(default=None),
+    min_velocity: Optional[int] = Form(default=None),
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -43,8 +49,18 @@ async def transcribe(file: UploadFile):
     upload_path = UPLOAD_DIR / file.filename
     upload_path.write_bytes(content)
 
+    params = TranscribeParams()
+    if onset_threshold is not None:
+        params.onset_threshold = max(0.0, min(1.0, onset_threshold))
+    if frame_threshold is not None:
+        params.frame_threshold = max(0.0, min(1.0, frame_threshold))
+    if minimum_note_length_ms is not None:
+        params.minimum_note_length_ms = max(50.0, min(1000.0, minimum_note_length_ms))
+    if min_velocity is not None:
+        params.min_velocity = max(0, min(127, min_velocity))
+
     try:
-        midi_path = transcribe_audio(upload_path)
+        midi_path = transcribe_audio(upload_path, params)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
     finally:
