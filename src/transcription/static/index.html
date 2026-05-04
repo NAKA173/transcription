@@ -4,718 +4,652 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Audio to MIDI - 音声→MIDI変換</title>
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.6/build/cjs/vexflow.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background: #0f0f23;
-            color: #e0e0e0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .container {
-            max-width: 520px;
-            width: 100%;
-            padding: 2rem;
-        }
-        h1 {
-            text-align: center;
-            margin-bottom: 0.5rem;
-            font-size: 1.8rem;
-            color: #fff;
-        }
-        .subtitle {
-            text-align: center;
-            color: #888;
-            margin-bottom: 2rem;
-            font-size: 0.95rem;
-        }
-        .upload-area {
-            border: 2px dashed #444;
-            border-radius: 12px;
-            padding: 2.5rem 1.5rem;
-            text-align: center;
-            cursor: pointer;
-            transition: border-color 0.2s, background 0.2s;
-            background: #1a1a2e;
-        }
-        .upload-area:hover, .upload-area.dragover {
-            border-color: #6c63ff;
-            background: #1f1f3a;
-        }
-        .upload-area input[type="file"] { display: none; }
-        .upload-icon { font-size: 2.5rem; margin-bottom: 0.8rem; }
-        .upload-text { color: #aaa; font-size: 0.9rem; }
-        .file-name {
-            margin-top: 0.8rem;
-            color: #6c63ff;
-            font-weight: 500;
-            word-break: break-all;
-        }
-        .btn {
-            display: block;
-            width: 100%;
-            padding: 0.9rem;
-            margin-top: 1.5rem;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        .btn-primary {
-            background: #6c63ff;
-            color: #fff;
-        }
-        .btn-primary:hover { background: #5a52d5; }
-        .btn-primary:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
-        }
-        .btn-download {
-            background: #2ecc71;
-            color: #fff;
-            text-decoration: none;
-            text-align: center;
-        }
-        .btn-download:hover { background: #27ae60; }
-        .status {
-            text-align: center;
-            margin-top: 1rem;
-            font-size: 0.9rem;
-        }
-        .status.error { color: #e74c3c; }
-        .status.processing { color: #f39c12; }
-        .spinner {
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            border: 2px solid #f39c12;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 0.4rem;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .result { margin-top: 1.5rem; }
-        .formats {
-            text-align: center;
-            margin-top: 1rem;
-            color: #666;
-            font-size: 0.8rem;
-        }
-
-        /* Progress bar */
-        .progress-container {
-            display: none;
-            margin-top: 1rem;
-        }
-        .progress-container.active { display: block; }
-        .progress-bar-bg {
-            width: 100%;
-            height: 6px;
-            background: #2a2a4a;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-bottom: 0.5rem;
-        }
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #6c63ff, #9b59b6);
-            border-radius: 3px;
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-        .progress-step {
-            text-align: center;
-            font-size: 0.82rem;
-            color: #aaa;
-        }
-
-        /* Settings panel */
-        .settings-toggle {
-            display: block;
-            width: 100%;
-            margin-top: 1.2rem;
-            padding: 0.5rem;
-            background: none;
-            border: 1px solid #333;
-            border-radius: 6px;
-            color: #888;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: border-color 0.2s, color 0.2s;
-        }
-        .settings-toggle:hover { border-color: #6c63ff; color: #ccc; }
-        .settings-panel {
-            display: none;
-            margin-top: 1rem;
-            padding: 1.2rem;
-            background: #1a1a2e;
-            border-radius: 10px;
-            border: 1px solid #2a2a4a;
-        }
-        .settings-panel.open { display: block; }
-        .setting-row {
-            margin-bottom: 1rem;
-        }
-        .setting-row:last-child { margin-bottom: 0; }
-        .setting-label {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 0.3rem;
-            font-size: 0.82rem;
-        }
-        .setting-label span:first-child { color: #aaa; }
-        .setting-desc {
-            font-size: 0.72rem;
-            color: #666;
-            margin-bottom: 0.4rem;
-        }
-        input[type="range"] {
-            -webkit-appearance: none;
-            width: 100%;
-            height: 4px;
-            background: #333;
-            border-radius: 2px;
-            outline: none;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
-            background: #6c63ff;
-            border-radius: 50%;
-            cursor: pointer;
-        }
-        /* Editable number inputs next to sliders */
-        .num-input {
-            width: 60px;
-            background: #252540;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #6c63ff;
-            font-weight: 600;
-            font-size: 0.82rem;
-            text-align: center;
-            padding: 2px 4px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-        .num-input:focus {
-            border-color: #6c63ff;
-        }
-        .num-input::-webkit-inner-spin-button { opacity: 0.5; }
-
-        .preset-row {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1.2rem;
-        }
-        .preset-btn {
-            flex: 1;
-            padding: 0.45rem 0.3rem;
-            background: #252540;
-            border: 1px solid #333;
-            border-radius: 6px;
-            color: #aaa;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .preset-btn:hover { border-color: #6c63ff; color: #fff; }
-        .preset-btn.active { border-color: #6c63ff; background: #2a2a5a; color: #fff; }
-        .section-header {
-            border-top: 1px solid #2a2a4a;
-            margin: 1rem 0 0.8rem;
-            padding-top: 0.8rem;
-        }
-        .section-title {
-            color: #ccc;
-            font-weight: 600;
-            font-size: 0.82rem;
-            margin-bottom: 0.5rem;
-        }
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f0f23;color:#e0e0e0;min-height:100vh}
+        .app{max-width:800px;margin:0 auto;padding:1.5rem}
+        h1{text-align:center;margin-bottom:.3rem;font-size:1.8rem;color:#fff}
+        .subtitle{text-align:center;color:#888;margin-bottom:1.5rem;font-size:.9rem}
+        .tabs{display:flex;gap:4px;margin-bottom:1.5rem;border-bottom:1px solid #2a2a4a}
+        .tab-btn{flex:1;padding:.6rem;background:none;border:none;border-bottom:2px solid transparent;color:#888;font-size:.85rem;cursor:pointer;transition:all .2s}
+        .tab-btn:hover{color:#ccc}
+        .tab-btn.active{color:#6c63ff;border-bottom-color:#6c63ff}
+        .tab-content{display:none}
+        .tab-content.active{display:block}
+        .upload-area{border:2px dashed #444;border-radius:12px;padding:2rem 1.5rem;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:#1a1a2e}
+        .upload-area:hover,.upload-area.dragover{border-color:#6c63ff;background:#1f1f3a}
+        .upload-area input[type="file"]{display:none}
+        .upload-icon{font-size:2.2rem;margin-bottom:.6rem}
+        .upload-text{color:#aaa;font-size:.85rem}
+        .file-name{margin-top:.6rem;color:#6c63ff;font-weight:500;word-break:break-all;font-size:.9rem}
+        .btn{display:block;width:100%;padding:.8rem;margin-top:1rem;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;transition:background .2s}
+        .btn-primary{background:#6c63ff;color:#fff}
+        .btn-primary:hover{background:#5a52d5}
+        .btn-primary:disabled{background:#333;color:#666;cursor:not-allowed}
+        .btn-download{background:#2ecc71;color:#fff;text-decoration:none;text-align:center;display:block}
+        .btn-download:hover{background:#27ae60}
+        .btn-sm{display:inline-block;width:auto;padding:.4rem .8rem;margin:0;font-size:.8rem;border-radius:6px}
+        .btn-danger{background:#e74c3c;color:#fff}
+        .btn-danger:hover{background:#c0392b}
+        .btn-secondary{background:#444;color:#ddd}
+        .btn-secondary:hover{background:#555}
+        .status{text-align:center;margin-top:.8rem;font-size:.85rem}
+        .status.error{color:#e74c3c}
+        .status.processing{color:#f39c12}
+        .spinner{display:inline-block;width:16px;height:16px;border:2px solid #f39c12;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:.3rem}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .result{margin-top:1rem}
+        .formats{text-align:center;margin-top:.8rem;color:#666;font-size:.75rem}
+        .progress-container{display:none;margin-top:.8rem}
+        .progress-container.active{display:block}
+        .progress-bar-bg{width:100%;height:5px;background:#2a2a4a;border-radius:3px;overflow:hidden;margin-bottom:.4rem}
+        .progress-bar{height:100%;background:linear-gradient(90deg,#6c63ff,#9b59b6);border-radius:3px;width:0%;transition:width .3s ease}
+        .progress-step{text-align:center;font-size:.78rem;color:#aaa}
+        .settings-toggle{display:block;width:100%;margin-top:1rem;padding:.45rem;background:none;border:1px solid #333;border-radius:6px;color:#888;font-size:.82rem;cursor:pointer;transition:border-color .2s,color .2s}
+        .settings-toggle:hover{border-color:#6c63ff;color:#ccc}
+        .settings-panel{display:none;margin-top:.8rem;padding:1rem;background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a}
+        .settings-panel.open{display:block}
+        .setting-row{margin-bottom:.8rem}
+        .setting-row:last-child{margin-bottom:0}
+        .setting-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem;font-size:.8rem}
+        .setting-label span:first-child{color:#aaa}
+        .setting-desc{font-size:.7rem;color:#666;margin-bottom:.3rem}
+        input[type="range"]{-webkit-appearance:none;width:100%;height:4px;background:#333;border-radius:2px;outline:none}
+        input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:#6c63ff;border-radius:50%;cursor:pointer}
+        .num-input{width:58px;background:#252540;border:1px solid #444;border-radius:4px;color:#6c63ff;font-weight:600;font-size:.8rem;text-align:center;padding:2px 4px;outline:none;transition:border-color .2s}
+        .num-input:focus{border-color:#6c63ff}
+        .num-input::-webkit-inner-spin-button{opacity:.5}
+        .preset-row{display:flex;gap:.4rem;margin-bottom:1rem}
+        .preset-btn{flex:1;padding:.4rem .2rem;background:#252540;border:1px solid #333;border-radius:6px;color:#aaa;font-size:.72rem;cursor:pointer;transition:all .2s}
+        .preset-btn:hover{border-color:#6c63ff;color:#fff}
+        .preset-btn.active{border-color:#6c63ff;background:#2a2a5a;color:#fff}
+        .section-header{border-top:1px solid #2a2a4a;margin:.8rem 0 .6rem;padding-top:.6rem}
+        .section-title{color:#ccc;font-weight:600;font-size:.8rem;margin-bottom:.4rem}
+        input[type="checkbox"]{width:15px;height:15px;accent-color:#6c63ff}
+        .player-bar{display:none;margin-top:1rem;padding:.8rem;background:#1a1a2e;border-radius:8px;border:1px solid #2a2a4a}
+        .player-bar.active{display:block}
+        .player-controls{display:flex;align-items:center;gap:.6rem}
+        .player-btn{background:#6c63ff;color:#fff;border:none;border-radius:50%;width:32px;height:32px;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center}
+        .player-btn:hover{background:#5a52d5}
+        .player-time{font-size:.75rem;color:#aaa;min-width:80px}
+        .player-progress{flex:1;height:4px;background:#333;border-radius:2px;cursor:pointer;position:relative}
+        .player-progress-fill{height:100%;background:#6c63ff;border-radius:2px;width:0%;pointer-events:none}
+        .sheet-container{display:none;margin-top:1rem;padding:.8rem;background:#fff;border-radius:8px;overflow-x:auto;max-height:400px;overflow-y:auto}
+        .sheet-container.active{display:block}
+        #sheetMusic{min-height:150px}
+        .history-list{list-style:none}
+        .history-item{display:flex;justify-content:space-between;align-items:center;padding:.7rem;margin-bottom:.5rem;background:#1a1a2e;border-radius:8px;border:1px solid #2a2a4a}
+        .history-info{flex:1;min-width:0}
+        .history-name{font-weight:500;font-size:.85rem;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .history-meta{font-size:.72rem;color:#888;margin-top:.2rem}
+        .history-actions{display:flex;gap:.3rem;margin-left:.5rem;flex-shrink:0}
+        .empty-history{text-align:center;color:#666;padding:2rem;font-size:.85rem}
+        .batch-file{display:flex;justify-content:space-between;align-items:center;padding:.5rem .7rem;margin-bottom:.3rem;background:#1a1a2e;border-radius:6px;font-size:.82rem}
+        .batch-status{font-size:.72rem;color:#888}
+        .batch-status.done{color:#2ecc71}
+        .batch-status.err{color:#e74c3c}
+        .score-panel{margin-top:1rem;padding:1rem;background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a}
+        .score-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.5rem}
+        .score-item{padding:.5rem;background:#252540;border-radius:6px;text-align:center}
+        .score-value{font-size:1.2rem;font-weight:700;color:#6c63ff}
+        .score-label{font-size:.7rem;color:#888;margin-top:.2rem}
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Audio to MIDI</h1>
-        <p class="subtitle">音声ファイルをAIが解析してMIDIに変換します</p>
+<div class="app">
+    <h1>Audio to MIDI</h1>
+    <p class="subtitle">音声ファイルをAIが解析してMIDIに変換します</p>
+    <div class="tabs">
+        <button class="tab-btn active" data-tab="convert">変換</button>
+        <button class="tab-btn" data-tab="batch">一括変換</button>
+        <button class="tab-btn" data-tab="score">精度比較</button>
+        <button class="tab-btn" data-tab="history">履歴</button>
+    </div>
 
+    <!-- Convert Tab -->
+    <div class="tab-content active" id="tab-convert">
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">🎵</div>
             <div class="upload-text">クリックまたはドラッグ＆ドロップでファイルを選択</div>
-            <input type="file" id="fileInput" accept=".mp3,.wav">
+            <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.wma">
             <div class="file-name" id="fileName"></div>
         </div>
-
         <button class="settings-toggle" id="settingsToggle">詳細設定 ▼</button>
-
         <div class="settings-panel" id="settingsPanel">
             <div class="preset-row">
-                <button class="preset-btn" data-preset="clean" title="ノイズを最小限に。クリアな音源向き">クリーン</button>
-                <button class="preset-btn active" data-preset="balanced" title="バランス重視（デフォルト）">バランス</button>
-                <button class="preset-btn" data-preset="sensitive" title="細かい音も拾う。弱い音源向き">高感度</button>
+                <button class="preset-btn" data-preset="clean" title="ノイズを最小限に">クリーン</button>
+                <button class="preset-btn active" data-preset="balanced" title="バランス重視">バランス</button>
+                <button class="preset-btn" data-preset="sensitive" title="弱い音も拾う">高感度</button>
             </div>
-
             <div class="setting-row">
-                <div class="setting-label">
-                    <span>ノート検出感度</span>
-                    <input type="number" class="num-input" id="onsetVal" min="0.1" max="0.95" step="0.01" value="0.60">
-                </div>
-                <div class="setting-desc">低い→多くのノートを検出 / 高い→確実なノートのみ (0.10 - 0.95)</div>
+                <div class="setting-label"><span>ノート検出感度</span>
+                    <input type="number" class="num-input" id="onsetVal" min="0.1" max="0.95" step="0.01" value="0.60"></div>
+                <div class="setting-desc">低→多くのノートを検出 / 高→確実なノートのみ</div>
                 <input type="range" id="onsetThreshold" min="0.1" max="0.95" step="0.01" value="0.60">
             </div>
-
             <div class="setting-row">
-                <div class="setting-label">
-                    <span>フレーム確信度</span>
-                    <input type="number" class="num-input" id="frameVal" min="0.1" max="0.95" step="0.01" value="0.50">
-                </div>
-                <div class="setting-desc">低い→ノートを長く保持 / 高い→短めに切る (0.10 - 0.95)</div>
+                <div class="setting-label"><span>フレーム確信度</span>
+                    <input type="number" class="num-input" id="frameVal" min="0.1" max="0.95" step="0.01" value="0.50"></div>
+                <div class="setting-desc">低→長めに保持 / 高→短めに切る</div>
                 <input type="range" id="frameThreshold" min="0.1" max="0.95" step="0.01" value="0.50">
             </div>
-
             <div class="setting-row">
-                <div class="setting-label">
-                    <span>最短ノート長</span>
-                    <input type="number" class="num-input" id="noteLenVal" min="10" max="2000" step="1" value="200" style="width:70px;">
-                </div>
-                <div class="setting-desc">これより短いノートは除去 (ms単位, 10 - 2000)</div>
+                <div class="setting-label"><span>最短ノート長</span>
+                    <input type="number" class="num-input" id="noteLenVal" min="10" max="2000" step="1" value="200" style="width:68px"></div>
+                <div class="setting-desc">これより短いノートは除去 (ms)</div>
                 <input type="range" id="minNoteLength" min="10" max="2000" step="10" value="200">
             </div>
-
             <div class="setting-row">
-                <div class="setting-label">
-                    <span>最小ベロシティ</span>
-                    <input type="number" class="num-input" id="velVal" min="0" max="127" step="1" value="30">
-                </div>
-                <div class="setting-desc">これより弱い音は除去 (0 - 127)</div>
+                <div class="setting-label"><span>最小ベロシティ</span>
+                    <input type="number" class="num-input" id="velVal" min="0" max="127" step="1" value="30"></div>
+                <div class="setting-desc">これより弱い音は除去 (0-127)</div>
                 <input type="range" id="minVelocity" min="0" max="127" step="1" value="30">
             </div>
-
             <div class="setting-row">
                 <div class="setting-label">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" id="removePitchBends" checked
-                               style="width:16px; height:16px; accent-color:#6c63ff;">
-                        <span>ピッチベンド除去</span>
-                    </label>
-                </div>
-                <div class="setting-desc">AI変換で生じる不要なピッチベンドを除去（推奨ON）</div>
+                    <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+                        <input type="checkbox" id="removePitchBends" checked><span>ピッチベンド除去</span></label></div>
+                <div class="setting-desc">AI変換で生じる不要なピッチベンドを除去</div>
             </div>
-
-            <div class="section-header">
-                <div class="section-title">音声前処理</div>
-            </div>
-
+            <div class="section-header"><div class="section-title">音声前処理</div></div>
             <div class="setting-row">
                 <div class="setting-label">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" id="preprocessEnabled" checked
-                               style="width:16px; height:16px; accent-color:#6c63ff;">
-                        <span>ノーマライズ＆ノイズ除去</span>
-                    </label>
-                </div>
-                <div class="setting-desc">音量の正規化とバックグラウンドノイズの除去（推奨ON）</div>
+                    <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+                        <input type="checkbox" id="preprocessEnabled" checked><span>ノーマライズ＆ノイズ除去</span></label></div>
             </div>
-
-            <div class="section-header">
-                <div class="section-title">楽器分離（Demucs）</div>
-            </div>
-
+            <div class="section-header"><div class="section-title">楽器分離（Demucs）</div></div>
             <div class="setting-row">
                 <div class="setting-label">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" id="separateInstruments"
-                               style="width:16px; height:16px; accent-color:#6c63ff;">
-                        <span>楽器を分離してからMIDI変換</span>
-                    </label>
-                </div>
-                <div class="setting-desc">Vocals / Drums / Bass / Other に分離→個別トラック化（処理時間が長くなります）</div>
+                    <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+                        <input type="checkbox" id="separateInstruments"><span>楽器を分離してからMIDI変換</span></label></div>
+                <div class="setting-desc">Vocals / Drums / Bass / Other に分離→個別トラック化</div>
             </div>
-
-            <div class="section-header">
-                <div class="section-title">リズム補正</div>
+            <div class="setting-row" id="drumDetailRow" style="opacity:.4;pointer-events:none">
+                <div class="setting-label">
+                    <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+                        <input type="checkbox" id="drumDetail"><span>ドラムを詳細分類</span></label></div>
+                <div class="setting-desc">Kick / Snare / Hi-Hat / Tom / Crash / Rideに分離</div>
             </div>
-
+            <div class="section-header"><div class="section-title">リズム補正</div></div>
             <div class="setting-row">
                 <div class="setting-label">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" id="quantizeEnabled" checked
-                               style="width:16px; height:16px; accent-color:#6c63ff;">
-                        <span>ビート検出＆クォンタイズ</span>
-                    </label>
-                </div>
-                <div class="setting-desc">音声からドラム/リズムを解析し、ノートをビートに合わせる</div>
+                    <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+                        <input type="checkbox" id="quantizeEnabled" checked><span>ビート検出＆クォンタイズ</span></label></div>
             </div>
-
             <div class="setting-row" id="quantizeStrengthRow">
-                <div class="setting-label">
-                    <span>クォンタイズ強度</span>
-                    <input type="number" class="num-input" id="quantizeVal" min="0" max="100" step="1" value="80">
-                </div>
-                <div class="setting-desc">低い→ルバート（自由なリズム） / 高い→正確にグリッドにスナップ (0 - 100%)</div>
+                <div class="setting-label"><span>クォンタイズ強度</span>
+                    <input type="number" class="num-input" id="quantizeVal" min="0" max="100" step="1" value="80"></div>
+                <div class="setting-desc">低→自由なリズム / 高→グリッドにスナップ</div>
                 <input type="range" id="quantizeStrength" min="0" max="100" step="1" value="80">
             </div>
         </div>
-
         <button class="btn btn-primary" id="convertBtn" disabled>MIDIに変換</button>
-
         <div class="progress-container" id="progressContainer">
-            <div class="progress-bar-bg">
-                <div class="progress-bar" id="progressBar"></div>
-            </div>
+            <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
             <div class="progress-step" id="progressStep"></div>
         </div>
-
         <div class="status" id="status"></div>
         <div class="result" id="result"></div>
-
-        <div class="formats">対応形式: MP3, WAV</div>
+        <div class="player-bar" id="playerBar">
+            <div class="player-controls">
+                <button class="player-btn" id="playBtn" title="再生/停止">&#9654;</button>
+                <div class="player-progress" id="playerProgress">
+                    <div class="player-progress-fill" id="playerProgressFill"></div>
+                </div>
+                <div class="player-time" id="playerTime">0:00 / 0:00</div>
+            </div>
+        </div>
+        <div style="margin-top:.6rem;text-align:center">
+            <button class="btn btn-sm btn-secondary" id="showSheetBtn" style="display:none">楽譜を表示</button>
+        </div>
+        <div class="sheet-container" id="sheetContainer"><div id="sheetMusic"></div></div>
+        <div class="formats">対応形式: MP3, WAV, OGG, FLAC, M4A, AAC, WMA</div>
     </div>
 
-    <script>
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const fileName = document.getElementById('fileName');
-        const convertBtn = document.getElementById('convertBtn');
-        const status = document.getElementById('status');
-        const result = document.getElementById('result');
-        const settingsToggle = document.getElementById('settingsToggle');
-        const settingsPanel = document.getElementById('settingsPanel');
-        const progressContainer = document.getElementById('progressContainer');
-        const progressBar = document.getElementById('progressBar');
-        const progressStep = document.getElementById('progressStep');
+    <!-- Batch Tab -->
+    <div class="tab-content" id="tab-batch">
+        <div class="upload-area" id="batchUploadArea">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">複数ファイルをドラッグ＆ドロップまたはクリックで選択</div>
+            <input type="file" id="batchFileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.wma" multiple>
+        </div>
+        <ul class="batch-files" id="batchFileList" style="list-style:none;margin-top:.8rem"></ul>
+        <button class="btn btn-primary" id="batchConvertBtn" disabled>一括変換</button>
+        <div class="progress-container" id="batchProgressContainer">
+            <div class="progress-bar-bg"><div class="progress-bar" id="batchProgressBar"></div></div>
+            <div class="progress-step" id="batchProgressStep"></div>
+        </div>
+        <div class="status" id="batchStatus"></div>
+        <div id="batchResults"></div>
+        <div class="formats">対応形式: MP3, WAV, OGG, FLAC, M4A, AAC, WMA (最大20ファイル)</div>
+    </div>
 
-        // Slider + number input pairs (bidirectional sync)
-        const paramPairs = [
-            { slider: 'onsetThreshold', input: 'onsetVal' },
-            { slider: 'frameThreshold', input: 'frameVal' },
-            { slider: 'minNoteLength',  input: 'noteLenVal' },
-            { slider: 'minVelocity',    input: 'velVal' },
-            { slider: 'quantizeStrength', input: 'quantizeVal' },
-        ];
+    <!-- Score Tab -->
+    <div class="tab-content" id="tab-score">
+        <p style="font-size:.85rem;color:#aaa;margin-bottom:1rem">正解MIDIと変換結果MIDIを比較して精度を測定します</p>
+        <div style="display:flex;gap:.8rem;margin-bottom:.8rem">
+            <div style="flex:1">
+                <label style="font-size:.78rem;color:#888;display:block;margin-bottom:.3rem">正解 (Reference) MIDI</label>
+                <input type="file" id="scoreRefFile" accept=".mid,.midi" style="font-size:.8rem;color:#aaa">
+            </div>
+            <div style="flex:1">
+                <label style="font-size:.78rem;color:#888;display:block;margin-bottom:.3rem">変換結果 (Predicted) MIDI</label>
+                <input type="file" id="scorePredFile" accept=".mid,.midi" style="font-size:.8rem;color:#aaa">
+            </div>
+        </div>
+        <button class="btn btn-primary" id="scoreBtn" disabled>精度を測定</button>
+        <div class="status" id="scoreStatus"></div>
+        <div id="scoreResult"></div>
+    </div>
 
-        const sliders = {};
-        const numInputs = {};
+    <!-- History Tab -->
+    <div class="tab-content" id="tab-history">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+            <span style="font-size:.85rem;color:#aaa" id="historyCount">0件の履歴</span>
+            <button class="btn btn-sm btn-danger" id="clearHistoryBtn">全消去</button>
+        </div>
+        <ul class="history-list" id="historyList"></ul>
+        <div class="empty-history" id="emptyHistory">まだ変換履歴がありません</div>
+    </div>
+</div>
 
-        paramPairs.forEach(({ slider, input }) => {
-            const s = document.getElementById(slider);
-            const n = document.getElementById(input);
-            sliders[slider] = s;
-            numInputs[input] = n;
+<script>
+// Tabs
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+        document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    });
+});
 
-            // Slider → number input
-            s.addEventListener('input', () => {
-                n.value = s.value;
-                clearPresetHighlight();
-            });
+// Settings sync
+const paramPairs=[
+    {slider:'onsetThreshold',input:'onsetVal'},
+    {slider:'frameThreshold',input:'frameVal'},
+    {slider:'minNoteLength',input:'noteLenVal'},
+    {slider:'minVelocity',input:'velVal'},
+    {slider:'quantizeStrength',input:'quantizeVal'},
+];
+paramPairs.forEach(({slider,input})=>{
+    const s=document.getElementById(slider),n=document.getElementById(input);
+    s.addEventListener('input',()=>{n.value=s.value;clearPresetHighlight()});
+    n.addEventListener('input',()=>{
+        let v=parseFloat(n.value);
+        if(!isNaN(v)){s.value=Math.max(parseFloat(s.min),Math.min(parseFloat(s.max),v))}
+        clearPresetHighlight();
+    });
+});
+const quantizeEnabled=document.getElementById('quantizeEnabled');
+const quantizeStrengthRow=document.getElementById('quantizeStrengthRow');
+quantizeEnabled.addEventListener('change',()=>{
+    quantizeStrengthRow.style.opacity=quantizeEnabled.checked?'1':'.4';
+    quantizeStrengthRow.style.pointerEvents=quantizeEnabled.checked?'auto':'none';
+});
+const separateInstruments=document.getElementById('separateInstruments');
+const drumDetailRow=document.getElementById('drumDetailRow');
+separateInstruments.addEventListener('change',()=>{
+    drumDetailRow.style.opacity=separateInstruments.checked?'1':'.4';
+    drumDetailRow.style.pointerEvents=separateInstruments.checked?'auto':'none';
+});
+function clearPresetHighlight(){document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'))}
+const presets={
+    clean:{onset:.75,frame:.65,noteLen:300,vel:45,quantize:90},
+    balanced:{onset:.60,frame:.50,noteLen:200,vel:30,quantize:80},
+    sensitive:{onset:.40,frame:.30,noteLen:100,vel:15,quantize:50},
+};
+function applyPreset(name){
+    const p=presets[name];
+    setParam('onsetThreshold','onsetVal',p.onset);
+    setParam('frameThreshold','frameVal',p.frame);
+    setParam('minNoteLength','noteLenVal',p.noteLen);
+    setParam('minVelocity','velVal',p.vel);
+    setParam('quantizeStrength','quantizeVal',p.quantize);
+    document.querySelectorAll('.preset-btn').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));
+}
+function setParam(sid,nid,v){document.getElementById(sid).value=v;document.getElementById(nid).value=v}
+document.querySelectorAll('.preset-btn').forEach(btn=>btn.addEventListener('click',()=>applyPreset(btn.dataset.preset)));
+document.getElementById('settingsToggle').addEventListener('click',()=>{
+    const p=document.getElementById('settingsPanel');p.classList.toggle('open');
+    document.getElementById('settingsToggle').textContent=p.classList.contains('open')?'詳細設定 ▲':'詳細設定 ▼';
+});
 
-            // Number input → slider (on every keystroke / change)
-            n.addEventListener('input', () => {
-                const min = parseFloat(s.min);
-                const max = parseFloat(s.max);
-                let v = parseFloat(n.value);
-                if (!isNaN(v)) {
-                    v = Math.max(min, Math.min(max, v));
-                    s.value = v;
-                }
-                clearPresetHighlight();
-            });
-        });
+// File selection
+const ALLOWED_EXT=['mp3','wav','ogg','flac','m4a','aac','wma'];
+let selectedFile=null;
+const uploadArea=document.getElementById('uploadArea');
+const fileInput=document.getElementById('fileInput');
+const fileName=document.getElementById('fileName');
+const convertBtn=document.getElementById('convertBtn');
+const status=document.getElementById('status');
+const result=document.getElementById('result');
+const playerBar=document.getElementById('playerBar');
+const sheetContainer=document.getElementById('sheetContainer');
+const showSheetBtn=document.getElementById('showSheetBtn');
 
-        const quantizeEnabled = document.getElementById('quantizeEnabled');
-        const quantizeStrengthRow = document.getElementById('quantizeStrengthRow');
+uploadArea.addEventListener('click',()=>fileInput.click());
+uploadArea.addEventListener('dragover',e=>{e.preventDefault();uploadArea.classList.add('dragover')});
+uploadArea.addEventListener('dragleave',()=>uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop',e=>{e.preventDefault();uploadArea.classList.remove('dragover');if(e.dataTransfer.files.length>0)selectFile(e.dataTransfer.files[0])});
+fileInput.addEventListener('change',()=>{if(fileInput.files.length>0)selectFile(fileInput.files[0])});
 
-        quantizeEnabled.addEventListener('change', () => {
-            quantizeStrengthRow.style.opacity = quantizeEnabled.checked ? '1' : '0.4';
-            quantizeStrengthRow.style.pointerEvents = quantizeEnabled.checked ? 'auto' : 'none';
-        });
+function selectFile(file){
+    const ext=file.name.split('.').pop().toLowerCase();
+    if(!ALLOWED_EXT.includes(ext)){status.textContent='非対応の形式です: .'+ext;status.className='status error';return}
+    selectedFile=file;fileName.textContent=file.name;convertBtn.disabled=false;status.textContent='';result.innerHTML='';
+    playerBar.classList.remove('active');sheetContainer.classList.remove('active');showSheetBtn.style.display='none';
+}
 
-        function clearPresetHighlight() {
-            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-        }
+function getParams(){
+    return {
+        onset_threshold:parseFloat(document.getElementById('onsetVal').value),
+        frame_threshold:parseFloat(document.getElementById('frameVal').value),
+        minimum_note_length_ms:parseFloat(document.getElementById('noteLenVal').value),
+        min_velocity:parseInt(document.getElementById('velVal').value),
+        quantize_enabled:quantizeEnabled.checked,
+        quantize_strength:document.getElementById('quantizeVal').value/100,
+        remove_pitch_bends:document.getElementById('removePitchBends').checked,
+        separate_instruments:separateInstruments.checked,
+        preprocess:document.getElementById('preprocessEnabled').checked,
+        drum_detail:document.getElementById('drumDetail').checked,
+    };
+}
 
-        // Presets
-        const presets = {
-            clean:     { onset: 0.75, frame: 0.65, noteLen: 300, vel: 45, quantize: 90 },
-            balanced:  { onset: 0.60, frame: 0.50, noteLen: 200, vel: 30, quantize: 80 },
-            sensitive: { onset: 0.40, frame: 0.30, noteLen: 100, vel: 15, quantize: 50 },
+// Progress
+const progressContainer=document.getElementById('progressContainer');
+const progressBar=document.getElementById('progressBar');
+const progressStep=document.getElementById('progressStep');
+function showProgress(step,pct){progressContainer.classList.add('active');progressBar.style.width=pct+'%';progressStep.textContent=step}
+function hideProgress(){progressContainer.classList.remove('active');progressBar.style.width='0%';progressStep.textContent=''}
+
+// Convert
+let lastMidiBytes=null;
+let lastMidiFilename=null;
+
+convertBtn.addEventListener('click',async()=>{
+    if(!selectedFile)return;
+    convertBtn.disabled=true;result.innerHTML='';hideProgress();
+    playerBar.classList.remove('active');sheetContainer.classList.remove('active');showSheetBtn.style.display='none';
+    stopPlayback();
+    const params=getParams();
+    const wsProtocol=location.protocol==='https:'?'wss:':'ws:';
+    const wsUrl=`${wsProtocol}//${location.host}/ws/transcribe`;
+    let wsSuccess=false;
+    try{wsSuccess=await transcribeViaWebSocket(wsUrl,params)}catch(e){console.log('WS fallback:',e)}
+    if(!wsSuccess)await transcribeViaHTTP(params);
+    convertBtn.disabled=false;
+});
+
+async function transcribeViaWebSocket(wsUrl,params){
+    return new Promise((resolve)=>{
+        const ws=new WebSocket(wsUrl);let resolved=false;
+        ws.onerror=()=>{if(!resolved){resolved=true;resolve(false)}};
+        const timeout=setTimeout(()=>{if(!resolved){resolved=true;ws.close();resolve(false)}},2000);
+        ws.onopen=()=>{
+            clearTimeout(timeout);showProgress('接続中...',0);
+            status.innerHTML='<span class="spinner"></span>変換中...';status.className='status processing';
+            const reader=new FileReader();
+            reader.onload=()=>{ws.send(JSON.stringify({filename:selectedFile.name,audio_base64:reader.result.split(',')[1],...params}))};
+            reader.readAsDataURL(selectedFile);
         };
+        ws.onmessage=(event)=>{
+            const data=JSON.parse(event.data);
+            if(data.type==='progress')showProgress(data.step,data.percent);
+            else if(data.type==='result'){hideProgress();displayResult(data);status.textContent='変換完了!';status.className='status';ws.close();if(!resolved){resolved=true;resolve(true)}}
+            else if(data.type==='error'){hideProgress();status.textContent='エラー: '+data.detail;status.className='status error';ws.close();if(!resolved){resolved=true;resolve(true)}}
+        };
+        ws.onclose=()=>{if(!resolved){resolved=true;resolve(false)}};
+    });
+}
 
-        function applyPreset(name) {
-            const p = presets[name];
-            setParam('onsetThreshold', 'onsetVal', p.onset);
-            setParam('frameThreshold', 'frameVal', p.frame);
-            setParam('minNoteLength', 'noteLenVal', p.noteLen);
-            setParam('minVelocity', 'velVal', p.vel);
-            setParam('quantizeStrength', 'quantizeVal', p.quantize);
-            document.querySelectorAll('.preset-btn').forEach(b => {
-                b.classList.toggle('active', b.dataset.preset === name);
-            });
-        }
+async function transcribeViaHTTP(params){
+    status.innerHTML='<span class="spinner"></span>変換中...';status.className='status processing';showProgress('変換中...',50);
+    const formData=new FormData();formData.append('file',selectedFile);
+    for(const[key,val]of Object.entries(params))formData.append(key,val);
+    try{
+        const response=await fetch('/api/transcribe',{method:'POST',body:formData});
+        if(!response.ok){const err=await response.json();throw new Error(err.detail||'Transcription failed')}
+        const bpm=response.headers.get('X-Detected-BPM');
+        const noteCount=response.headers.get('X-Note-Count');
+        const stemsUsed=response.headers.get('X-Stems-Used');
+        const timeSig=response.headers.get('X-Time-Signature');
+        const drumParts=response.headers.get('X-Drum-Parts');
+        const blob=await response.blob();const url=URL.createObjectURL(blob);
+        const name=selectedFile.name.replace(/\.[^.]+$/,'.mid');
+        const ab=await blob.arrayBuffer();lastMidiBytes=new Uint8Array(ab);lastMidiFilename=name;
+        displayResult({detected_bpm:bpm?parseFloat(bpm):null,note_count:noteCount?parseInt(noteCount):0,
+            stems_used:stemsUsed?stemsUsed.split(',').filter(Boolean):[],time_signature:timeSig||'',
+            drum_parts:drumParts?drumParts.split(',').filter(Boolean):[],_blobUrl:url,filename:name});
+        hideProgress();status.textContent='変換完了!';status.className='status';
+    }catch(err){hideProgress();status.textContent='エラー: '+err.message;status.className='status error'}
+}
 
-        function setParam(sliderId, inputId, value) {
-            document.getElementById(sliderId).value = value;
-            document.getElementById(inputId).value = value;
-        }
+function arrayBufferToBase64(bytes){let bin='';for(let i=0;i<bytes.length;i++)bin+=String.fromCharCode(bytes[i]);return btoa(bin)}
 
-        document.querySelectorAll('.preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+function displayResult(data){
+    let url,name;
+    if(data._blobUrl){url=data._blobUrl;name=data.filename}
+    else{
+        const bin=atob(data.midi_base64);const bytes=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+        lastMidiBytes=bytes;lastMidiFilename=data.filename||'output.mid';
+        const blob=new Blob([bytes],{type:'audio/midi'});url=URL.createObjectURL(blob);name=data.filename||'output.mid';
+    }
+    let info='';
+    if(data.detected_bpm)info+=`BPM: ${Math.round(data.detected_bpm)}`;
+    if(data.time_signature)info+=`${info?' / ':''}拍子: ${data.time_signature}`;
+    if(data.note_count)info+=`${info?' / ':''}ノート数: ${data.note_count}`;
+    const stemLabels={vocals:'Vocals',drums:'Drums',bass:'Bass',other:'Other'};
+    if(data.stems_used&&data.stems_used.length>0){
+        info+=`${info?'<br>':''}トラック: ${data.stems_used.map(s=>stemLabels[s.trim()]||s.trim()).join(', ')}`;
+    }
+    const drumLabels={kick:'Kick',snare:'Snare',hihat:'Hi-Hat',tom:'Tom',crash:'Crash',ride:'Ride'};
+    if(data.drum_parts&&data.drum_parts.length>0){
+        info+=`${info?'<br>':''}ドラム詳細: ${data.drum_parts.map(s=>drumLabels[s.trim()]||s.trim()).join(', ')}`;
+    }
+    result.innerHTML=`${info?`<div style="text-align:center;color:#6c63ff;font-size:.85rem;margin-bottom:.6rem">${info}</div>`:''}<a class="btn btn-download" href="${url}" download="${name}">MIDIファイルをダウンロード</a>`;
+    saveToHistory({filename:selectedFile?selectedFile.name:'unknown',midiFilename:name,
+        detected_bpm:data.detected_bpm,note_count:data.note_count,stems_used:data.stems_used,
+        time_signature:data.time_signature,drum_parts:data.drum_parts,
+        midi_base64:data.midi_base64||arrayBufferToBase64(lastMidiBytes),
+        timestamp:Date.now(),params:getParams()});
+    if(lastMidiBytes){playerBar.classList.add('active');showSheetBtn.style.display='inline-block';loadMidiForPlayback(lastMidiBytes)}
+}
+
+// MIDI Player
+const playBtn=document.getElementById('playBtn');
+const playerProgress=document.getElementById('playerProgress');
+const playerProgressFill=document.getElementById('playerProgressFill');
+const playerTime=document.getElementById('playerTime');
+let midiData=null,isPlaying=false,playStartTime=0,synths=[],playRaf=null,midiDuration=0;
+
+function loadMidiForPlayback(bytes){
+    try{midiData=new Midi(bytes.buffer||bytes);midiDuration=midiData.duration;
+        playerTime.textContent=`0:00 / ${formatTime(midiDuration)}`;playerProgressFill.style.width='0%';
+    }catch(e){console.error('MIDI parse:',e);playerBar.classList.remove('active')}
+}
+function formatTime(s){const m=Math.floor(s/60);const sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec}
+
+playBtn.addEventListener('click',()=>{if(isPlaying)stopPlayback();else startPlayback()});
+
+function startPlayback(){
+    if(!midiData)return;stopPlayback();isPlaying=true;playBtn.innerHTML='&#9646;&#9646;';
+    Tone.start();const now=Tone.now()+0.1;playStartTime=now;
+    midiData.tracks.forEach(track=>{
+        const synth=new Tone.PolySynth(Tone.Synth,{envelope:{attack:.02,decay:.1,sustain:.3,release:.5}}).toDestination();
+        synths.push(synth);
+        track.notes.forEach(note=>{synth.triggerAttackRelease(note.name,note.duration,now+note.time,note.velocity)});
+    });
+    updatePlayerProgress();
+}
+function stopPlayback(){
+    isPlaying=false;playBtn.innerHTML='&#9654;';
+    synths.forEach(s=>{try{s.dispose()}catch(e){}});synths=[];
+    if(playRaf)cancelAnimationFrame(playRaf);playRaf=null;
+    Tone.Transport.stop();Tone.Transport.cancel();
+}
+function updatePlayerProgress(){
+    if(!isPlaying)return;
+    const elapsed=Tone.now()-playStartTime;
+    const pct=Math.min(100,elapsed/midiDuration*100);
+    playerProgressFill.style.width=pct+'%';
+    playerTime.textContent=`${formatTime(elapsed)} / ${formatTime(midiDuration)}`;
+    if(elapsed>=midiDuration){stopPlayback();return}
+    playRaf=requestAnimationFrame(updatePlayerProgress);
+}
+playerProgress.addEventListener('click',e=>{
+    if(!midiData)return;const rect=playerProgress.getBoundingClientRect();
+    const pct=(e.clientX-rect.left)/rect.width;
+    if(isPlaying)stopPlayback();
+    playerProgressFill.style.width=(pct*100)+'%';
+    playerTime.textContent=`${formatTime(pct*midiDuration)} / ${formatTime(midiDuration)}`;
+});
+
+// Sheet Music
+showSheetBtn.addEventListener('click',()=>{
+    if(sheetContainer.classList.contains('active')){sheetContainer.classList.remove('active');showSheetBtn.textContent='楽譜を表示'}
+    else{sheetContainer.classList.add('active');showSheetBtn.textContent='楽譜を非表示';renderSheetMusic()}
+});
+
+function renderSheetMusic(){
+    const div=document.getElementById('sheetMusic');div.innerHTML='';
+    if(!midiData||!midiData.tracks||midiData.tracks.length===0)return;
+    const VF=typeof Vex!=='undefined'&&Vex.Flow?Vex.Flow:(typeof vexflow!=='undefined'?vexflow:null);
+    if(!VF){div.innerHTML='<p style="color:#999;text-align:center">VexFlow読み込みエラー</p>';return}
+    let track=midiData.tracks.find(t=>t.notes.length>0);if(!track)return;
+    const bpm=midiData.header.tempos.length>0?midiData.header.tempos[0].bpm:120;
+    const beatDur=60/bpm;
+    const notes=track.notes.filter(n=>n.time<128*beatDur).slice(0,200);
+    if(notes.length===0)return;
+    const measureDur=4*beatDur;const measures=[];let cur=[];let ms=0;
+    notes.forEach(n=>{while(n.time>=ms+measureDur){measures.push(cur);cur=[];ms+=measureDur}cur.push(n)});
+    if(cur.length>0)measures.push(cur);
+    const dm=measures.slice(0,16);const mpl=4;const lc=Math.ceil(dm.length/mpl);
+    const tw=Math.max(700,mpl*180+40);const th=lc*140+40;
+    const renderer=new VF.Renderer(div,VF.Renderer.Backends.SVG);renderer.resize(tw,th);
+    const ctx=renderer.getContext();
+    const noteNames=['c','c','d','d','e','f','f','g','g','a','a','b'];
+    const accs=['','#','','#','','','#','','#','','#',''];
+    for(let line=0;line<lc;line++){
+        const y=line*140+20;const ml=dm.slice(line*mpl,(line+1)*mpl);let x=10;
+        ml.forEach((mNotes,mi)=>{
+            const sw=170;const stave=new VF.Stave(x,y,sw);
+            if(line===0&&mi===0)stave.addClef('treble').addTimeSignature('4/4');
+            stave.setContext(ctx).draw();
+            const vfn=[];
+            if(mNotes.length===0){vfn.push(new VF.StaveNote({keys:['b/4'],duration:'wr'}))}
+            else{mNotes.slice(0,8).forEach(n=>{
+                const dur=n.duration;let vd='q';
+                if(dur<beatDur*.375)vd='16';else if(dur<beatDur*.75)vd='8';else if(dur<beatDur*1.5)vd='q';else if(dur<beatDur*3)vd='h';else vd='w';
+                const mn=n.midi;const nn=noteNames[mn%12];const ac=accs[mn%12];const oct=Math.floor(mn/12)-1;
+                const key=`${nn}${ac?'#':''}/${oct}`;
+                try{const sn=new VF.StaveNote({keys:[key],duration:vd});if(ac)sn.addModifier(new VF.Accidental(ac));vfn.push(sn)}catch(e){}
+            })}
+            if(vfn.length>0){try{VF.Formatter.FormatAndDraw(ctx,stave,vfn)}catch(e){}}
+            x+=sw;
         });
+    }
+}
 
-        // Settings toggle
-        settingsToggle.addEventListener('click', () => {
-            settingsPanel.classList.toggle('open');
-            settingsToggle.textContent = settingsPanel.classList.contains('open')
-                ? '詳細設定 ▲' : '詳細設定 ▼';
+// History
+const HISTORY_KEY='midi_transcription_history';const MAX_HISTORY=50;
+function getHistory(){try{return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')}catch(e){return[]}}
+function setHistory(h){while(JSON.stringify(h).length>4*1024*1024&&h.length>1)h.pop();localStorage.setItem(HISTORY_KEY,JSON.stringify(h))}
+function saveToHistory(entry){const h=getHistory();h.unshift(entry);if(h.length>MAX_HISTORY)h.length=MAX_HISTORY;setHistory(h);renderHistory()}
+function renderHistory(){
+    const h=getHistory();const list=document.getElementById('historyList');
+    const empty=document.getElementById('emptyHistory');
+    document.getElementById('historyCount').textContent=h.length+'件の履歴';
+    if(h.length===0){list.innerHTML='';empty.style.display='block';return}
+    empty.style.display='none';
+    list.innerHTML=h.map((item,i)=>{
+        const d=new Date(item.timestamp);
+        const ds=`${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+        const meta=[];if(item.detected_bpm)meta.push(`BPM:${Math.round(item.detected_bpm)}`);
+        if(item.note_count)meta.push(`${item.note_count}ノート`);if(item.time_signature)meta.push(item.time_signature);
+        return `<li class="history-item"><div class="history-info"><div class="history-name">${item.filename||'unknown'}</div><div class="history-meta">${ds} ${meta.join(' / ')}</div></div><div class="history-actions">${item.midi_base64?`<button class="btn btn-sm btn-primary" onclick="downloadHistoryItem(${i})">DL</button>`:''}<button class="btn btn-sm btn-danger" onclick="deleteHistoryItem(${i})">x</button></div></li>`;
+    }).join('');
+}
+window.downloadHistoryItem=function(i){
+    const h=getHistory();const item=h[i];if(!item||!item.midi_base64)return;
+    const bin=atob(item.midi_base64);const bytes=new Uint8Array(bin.length);
+    for(let j=0;j<bin.length;j++)bytes[j]=bin.charCodeAt(j);
+    const blob=new Blob([bytes],{type:'audio/midi'});const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=item.midiFilename||'output.mid';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+};
+window.deleteHistoryItem=function(i){const h=getHistory();h.splice(i,1);setHistory(h);renderHistory()};
+document.getElementById('clearHistoryBtn').addEventListener('click',()=>{if(confirm('全ての履歴を削除しますか？')){localStorage.removeItem(HISTORY_KEY);renderHistory()}});
+renderHistory();
+
+// Batch
+const batchUploadArea=document.getElementById('batchUploadArea');
+const batchFileInput=document.getElementById('batchFileInput');
+const batchFileList=document.getElementById('batchFileList');
+const batchConvertBtn=document.getElementById('batchConvertBtn');
+const batchStatus=document.getElementById('batchStatus');
+const batchResults=document.getElementById('batchResults');
+let batchFiles=[];
+batchUploadArea.addEventListener('click',()=>batchFileInput.click());
+batchUploadArea.addEventListener('dragover',e=>{e.preventDefault();batchUploadArea.classList.add('dragover')});
+batchUploadArea.addEventListener('dragleave',()=>batchUploadArea.classList.remove('dragover'));
+batchUploadArea.addEventListener('drop',e=>{e.preventDefault();batchUploadArea.classList.remove('dragover');addBatchFiles(e.dataTransfer.files)});
+batchFileInput.addEventListener('change',()=>addBatchFiles(batchFileInput.files));
+function addBatchFiles(files){for(const f of files){const ext=f.name.split('.').pop().toLowerCase();if(ALLOWED_EXT.includes(ext)&&batchFiles.length<20)batchFiles.push(f)}renderBatchList();batchConvertBtn.disabled=batchFiles.length===0}
+function renderBatchList(){batchFileList.innerHTML=batchFiles.map((f,i)=>`<li class="batch-file"><span>${f.name}</span><button class="btn btn-sm btn-danger" onclick="removeBatchFile(${i})">x</button></li>`).join('')}
+window.removeBatchFile=function(i){batchFiles.splice(i,1);renderBatchList();batchConvertBtn.disabled=batchFiles.length===0};
+batchConvertBtn.addEventListener('click',async()=>{
+    if(batchFiles.length===0)return;batchConvertBtn.disabled=true;batchResults.innerHTML='';batchStatus.textContent='';
+    const bpc=document.getElementById('batchProgressContainer');const bpb=document.getElementById('batchProgressBar');const bps=document.getElementById('batchProgressStep');
+    bpc.classList.add('active');bps.textContent='一括変換中...';bpb.style.width='50%';
+    const params=getParams();const formData=new FormData();
+    batchFiles.forEach(f=>formData.append('files',f));
+    for(const[key,val]of Object.entries(params))formData.append(key,val);
+    try{
+        const resp=await fetch('/api/transcribe/batch',{method:'POST',body:formData});
+        if(!resp.ok){const err=await resp.json();throw new Error(err.detail||'Batch failed')}
+        const data=await resp.json();bpc.classList.remove('active');
+        let html='';data.results.forEach(r=>{
+            if(r.error){html+=`<div class="batch-file"><span>${r.filename}</span><span class="batch-status err">${r.error}</span></div>`}
+            else{const bin=atob(r.midi_base64);const bytes=new Uint8Array(bin.length);
+                for(let j=0;j<bin.length;j++)bytes[j]=bin.charCodeAt(j);
+                const blob=new Blob([bytes],{type:'audio/midi'});const url=URL.createObjectURL(blob);
+                html+=`<div class="batch-file"><span>${r.filename} → ${r.midi_filename} (${r.note_count}ノート)</span><a class="btn btn-sm btn-download" href="${url}" download="${r.midi_filename}" style="margin:0">DL</a></div>`;
+                saveToHistory({filename:r.filename,midiFilename:r.midi_filename,detected_bpm:r.detected_bpm,
+                    note_count:r.note_count,stems_used:r.stems_used,time_signature:r.time_signature,
+                    drum_parts:r.drum_parts,midi_base64:r.midi_base64,timestamp:Date.now(),params});}
         });
+        batchResults.innerHTML=html;
+        batchStatus.textContent=`完了: ${data.results.filter(r=>!r.error).length}/${data.results.length}件 成功`;batchStatus.className='status';
+    }catch(err){bpc.classList.remove('active');batchStatus.textContent='エラー: '+err.message;batchStatus.className='status error'}
+    batchConvertBtn.disabled=false;
+});
 
-        // File selection
-        let selectedFile = null;
-
-        uploadArea.addEventListener('click', () => fileInput.click());
-
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                selectFile(e.dataTransfer.files[0]);
-            }
-        });
-
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                selectFile(fileInput.files[0]);
-            }
-        });
-
-        function selectFile(file) {
-            const ext = file.name.split('.').pop().toLowerCase();
-            if (!['mp3', 'wav'].includes(ext)) {
-                status.textContent = 'MP3またはWAVファイルを選択してください';
-                status.className = 'status error';
-                return;
-            }
-            selectedFile = file;
-            fileName.textContent = file.name;
-            convertBtn.disabled = false;
-            status.textContent = '';
-            result.innerHTML = '';
-        }
-
-        function showProgress(step, percent) {
-            progressContainer.classList.add('active');
-            progressBar.style.width = percent + '%';
-            progressStep.textContent = step;
-        }
-
-        function hideProgress() {
-            progressContainer.classList.remove('active');
-            progressBar.style.width = '0%';
-            progressStep.textContent = '';
-        }
-
-        // Read current values from inputs (number inputs are the source of truth)
-        function getParams() {
-            return {
-                onset_threshold: parseFloat(document.getElementById('onsetVal').value),
-                frame_threshold: parseFloat(document.getElementById('frameVal').value),
-                minimum_note_length_ms: parseFloat(document.getElementById('noteLenVal').value),
-                min_velocity: parseInt(document.getElementById('velVal').value),
-                quantize_enabled: quantizeEnabled.checked,
-                quantize_strength: document.getElementById('quantizeVal').value / 100,
-                remove_pitch_bends: document.getElementById('removePitchBends').checked,
-                separate_instruments: document.getElementById('separateInstruments').checked,
-                preprocess: document.getElementById('preprocessEnabled').checked,
-            };
-        }
-
-        // Convert — try WebSocket first, fall back to HTTP POST
-        convertBtn.addEventListener('click', async () => {
-            if (!selectedFile) return;
-
-            convertBtn.disabled = true;
-            result.innerHTML = '';
-            hideProgress();
-
-            const params = getParams();
-
-            // Try WebSocket for real-time progress
-            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${location.host}/ws/transcribe`;
-
-            let wsSuccess = false;
-            try {
-                wsSuccess = await transcribeViaWebSocket(wsUrl, params);
-            } catch (e) {
-                console.log('WebSocket failed, falling back to HTTP:', e);
-            }
-
-            if (!wsSuccess) {
-                await transcribeViaHTTP(params);
-            }
-
-            convertBtn.disabled = false;
-        });
-
-        async function transcribeViaWebSocket(wsUrl, params) {
-            return new Promise((resolve, reject) => {
-                const ws = new WebSocket(wsUrl);
-                let resolved = false;
-
-                ws.onerror = () => {
-                    if (!resolved) { resolved = true; resolve(false); }
-                };
-
-                const timeout = setTimeout(() => {
-                    if (!resolved) { resolved = true; ws.close(); resolve(false); }
-                }, 2000);
-
-                ws.onopen = () => {
-                    clearTimeout(timeout);
-                    showProgress('接続中...', 0);
-                    status.innerHTML = '<span class="spinner"></span>変換中...';
-                    status.className = 'status processing';
-
-                    // Read file and send as base64
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                        const base64 = reader.result.split(',')[1];
-                        ws.send(JSON.stringify({
-                            filename: selectedFile.name,
-                            audio_base64: base64,
-                            ...params,
-                        }));
-                    };
-                    reader.readAsDataURL(selectedFile);
-                };
-
-                ws.onmessage = (event) => {
-                    const data = JSON.parse(event.data);
-
-                    if (data.type === 'progress') {
-                        showProgress(data.step, data.percent);
-                    } else if (data.type === 'result') {
-                        hideProgress();
-                        displayResult(data);
-                        status.textContent = '変換完了!';
-                        status.className = 'status';
-                        ws.close();
-                        if (!resolved) { resolved = true; resolve(true); }
-                    } else if (data.type === 'error') {
-                        hideProgress();
-                        status.textContent = `エラー: ${data.detail}`;
-                        status.className = 'status error';
-                        ws.close();
-                        if (!resolved) { resolved = true; resolve(true); }
-                    }
-                };
-
-                ws.onclose = () => {
-                    if (!resolved) { resolved = true; resolve(false); }
-                };
-            });
-        }
-
-        async function transcribeViaHTTP(params) {
-            status.innerHTML = '<span class="spinner"></span>変換中... しばらくお待ちください';
-            status.className = 'status processing';
-            showProgress('変換中...', 50);
-
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-            for (const [key, val] of Object.entries(params)) {
-                formData.append(key, val);
-            }
-
-            try {
-                const response = await fetch('/api/transcribe', {
-                    method: 'POST',
-                    body: formData,
-                });
-
-                if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || 'Transcription failed');
-                }
-
-                const bpm = response.headers.get('X-Detected-BPM');
-                const noteCount = response.headers.get('X-Note-Count');
-                const stemsUsed = response.headers.get('X-Stems-Used');
-                const timeSig = response.headers.get('X-Time-Signature');
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const name = selectedFile.name.replace(/\.[^.]+$/, '.mid');
-
-                displayResult({
-                    detected_bpm: bpm ? parseFloat(bpm) : null,
-                    note_count: noteCount ? parseInt(noteCount) : 0,
-                    stems_used: stemsUsed ? stemsUsed.split(',').filter(Boolean) : [],
-                    time_signature: timeSig || '',
-                    _blobUrl: url,
-                    filename: name,
-                });
-
-                hideProgress();
-                status.textContent = '変換完了!';
-                status.className = 'status';
-            } catch (err) {
-                hideProgress();
-                status.textContent = `エラー: ${err.message}`;
-                status.className = 'status error';
-            }
-        }
-
-        function displayResult(data) {
-            let url, name;
-
-            if (data._blobUrl) {
-                url = data._blobUrl;
-                name = data.filename;
-            } else {
-                // Decode base64 MIDI from WebSocket
-                const binaryStr = atob(data.midi_base64);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) {
-                    bytes[i] = binaryStr.charCodeAt(i);
-                }
-                const blob = new Blob([bytes], { type: 'audio/midi' });
-                url = URL.createObjectURL(blob);
-                name = data.filename || 'output.mid';
-            }
-
-            let info = '';
-            if (data.detected_bpm) info += `BPM: ${Math.round(data.detected_bpm)}`;
-            if (data.time_signature) info += `${info ? ' / ' : ''}拍子: ${data.time_signature}`;
-            if (data.note_count) info += `${info ? ' / ' : ''}ノート数: ${data.note_count}`;
-            if (data.stems_used && data.stems_used.length > 0) {
-                const stemLabels = {vocals:'Vocals', drums:'Drums', bass:'Bass', other:'Other'};
-                const names = data.stems_used.map(s => stemLabels[s.trim()] || s.trim()).join(', ');
-                info += `${info ? '<br>' : ''}トラック: ${names}`;
-            }
-
-            result.innerHTML = `
-                ${info ? `<div style="text-align:center;color:#6c63ff;font-size:0.9rem;margin-bottom:0.8rem;">${info}</div>` : ''}
-                <a class="btn btn-download" href="${url}" download="${name}">MIDIファイルをダウンロード</a>`;
-        }
-    </script>
+// Score
+const scoreRefFile=document.getElementById('scoreRefFile');
+const scorePredFile=document.getElementById('scorePredFile');
+const scoreBtn=document.getElementById('scoreBtn');
+const scoreStatus=document.getElementById('scoreStatus');
+const scoreResult=document.getElementById('scoreResult');
+function checkScoreReady(){scoreBtn.disabled=!(scoreRefFile.files.length>0&&scorePredFile.files.length>0)}
+scoreRefFile.addEventListener('change',checkScoreReady);scorePredFile.addEventListener('change',checkScoreReady);
+scoreBtn.addEventListener('click',async()=>{
+    scoreBtn.disabled=true;scoreStatus.textContent='';scoreResult.innerHTML='';
+    const formData=new FormData();formData.append('reference',scoreRefFile.files[0]);formData.append('predicted',scorePredFile.files[0]);
+    scoreStatus.innerHTML='<span class="spinner"></span>測定中...';scoreStatus.className='status processing';
+    try{
+        const resp=await fetch('/api/score',{method:'POST',body:formData});
+        if(!resp.ok){const err=await resp.json();throw new Error(err.detail||'Score failed')}
+        const d=await resp.json();scoreStatus.textContent='測定完了';scoreStatus.className='status';
+        const f1c=d.f1>=.8?'#2ecc71':d.f1>=.5?'#f39c12':'#e74c3c';
+        scoreResult.innerHTML=`<div class="score-panel"><div style="text-align:center;margin-bottom:.5rem"><span style="font-size:1.8rem;font-weight:700;color:${f1c}">${(d.f1*100).toFixed(1)}%</span><br><span style="font-size:.75rem;color:#888">F1スコア</span></div><div class="score-grid"><div class="score-item"><div class="score-value">${(d.precision*100).toFixed(1)}%</div><div class="score-label">Precision (適合率)</div></div><div class="score-item"><div class="score-value">${(d.recall*100).toFixed(1)}%</div><div class="score-label">Recall (再現率)</div></div><div class="score-item"><div class="score-value">${(d.pitch_accuracy*100).toFixed(1)}%</div><div class="score-label">Pitch Accuracy</div></div><div class="score-item"><div class="score-value">${(d.onset_mae*1000).toFixed(0)}ms</div><div class="score-label">Onset誤差 (平均)</div></div><div class="score-item"><div class="score-value">${d.matched_notes}</div><div class="score-label">マッチしたノート</div></div><div class="score-item"><div class="score-value">${d.total_ref_notes} / ${d.total_pred_notes}</div><div class="score-label">正解 / 予測 ノート数</div></div></div></div>`;
+    }catch(err){scoreStatus.textContent='エラー: '+err.message;scoreStatus.className='status error'}
+    scoreBtn.disabled=false;checkScoreReady();
+});
+</script>
 </body>
 </html>

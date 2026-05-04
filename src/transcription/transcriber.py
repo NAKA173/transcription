@@ -62,6 +62,7 @@ class TranscribeParams:
     melodia_trick: bool = True
     separate_instruments: bool = False  # Demucs source separation
     preprocess: bool = True  # audio normalization + noise reduction
+    drum_detail: bool = False  # split drums into hi-hat/snare/tom/etc.
 
 
 @dataclass
@@ -71,6 +72,7 @@ class TranscribeResult:
     note_count: int = 0
     stems_used: list[str] = field(default_factory=list)
     time_signature: str = ""
+    drum_parts: list[str] = field(default_factory=list)
 
 
 def transcribe_audio(
@@ -130,11 +132,24 @@ def _transcribe_single(
                 midi_data, audio_path, params,
             )
 
+        drum_parts = []
+        if params.drum_detail:
+            from transcription.drums import separate_drum_notes
+            new_instruments = []
+            for inst in midi_data.instruments:
+                if inst.is_drum and inst.notes:
+                    sep = separate_drum_notes(inst)
+                    for part_name, part_inst in sep.instruments.items():
+                        new_instruments.append(part_inst)
+                        drum_parts.append(part_name)
+                else:
+                    new_instruments.append(inst)
+            midi_data.instruments = new_instruments
+
         note_count = sum(len(i.notes) for i in midi_data.instruments)
 
         output_path = OUTPUT_DIR / f"{audio_path.stem}_{uuid.uuid4().hex[:8]}.mid"
 
-        # Write time signature into MIDI if detected
         if time_sig_str:
             _write_time_signature(midi_data, time_sig_str)
 
@@ -146,6 +161,7 @@ def _transcribe_single(
             detected_bpm=detected_bpm,
             note_count=note_count,
             time_signature=time_sig_str,
+            drum_parts=drum_parts,
         )
     finally:
         if preprocessed and preprocessed.exists():
@@ -238,6 +254,20 @@ def _transcribe_with_separation(
                 combined.instruments.append(inst)
                 stems_used.append(stem_name)
 
+        drum_parts = []
+        if params.drum_detail:
+            from transcription.drums import separate_drum_notes
+            new_instruments = []
+            for inst in combined.instruments:
+                if inst.is_drum and inst.notes:
+                    sep = separate_drum_notes(inst)
+                    for part_name, part_inst in sep.instruments.items():
+                        new_instruments.append(part_inst)
+                        drum_parts.append(part_name)
+                else:
+                    new_instruments.append(inst)
+            combined.instruments = new_instruments
+
         note_count = sum(len(i.notes) for i in combined.instruments)
 
         output_path = OUTPUT_DIR / f"{audio_path.stem}_{uuid.uuid4().hex[:8]}.mid"
@@ -254,6 +284,7 @@ def _transcribe_with_separation(
             note_count=note_count,
             stems_used=stems_used,
             time_signature=time_sig_str,
+            drum_parts=drum_parts,
         )
     finally:
         # Clean up preprocessed stems
